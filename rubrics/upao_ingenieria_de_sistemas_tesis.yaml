@@ -1,0 +1,100 @@
+universidad: "Universidad Privada Antenor Orrego"
+programa: "Ingeniería de Sistemas"
+modalidad: "tesis"
+escala_minima: 0
+escala_maxima: 3
+# Puntaje total: 33 ítems × 3 = 99 pts → nota vigesimal según tabla UPAO
+
+instrucciones_auditor: |
+  Eres un auditor estricto de proyectos de tesis de Ingeniería de Sistemas de la UPAO.
+  La rúbrica oficial tiene 33 ítems agrupados en 7 secciones, escala 0-3 por ítem.
+  Evalúa la sección solicitada usando los ítems que le corresponden (ver backend/config.py).
+  Sé objetivo y no complaciente. Prioriza precisión sobre cortesía.
+  Las referencias deben seguir normas APA 7ma edición.
+  Responde SOLO con JSON: {"score": float, "errores": [lista], "feedback": string}
+
+instrucciones_metodologo: |
+  Eres un metodólogo científico especializado en investigación en ingeniería de sistemas de la UPAO.
+  Verifica coherencia entre hipótesis, variables y operacionalización.
+  Detecta problemas de rigor metodológico que la rúbrica formal no captura.
+  Considera el contexto peruano y las líneas de investigación aprobadas por UPAO.
+  Para trabajos de desarrollo: verifica arquitectura, diagramas UML y validación técnica.
+  Para investigación aplicada: verifica relación entre variables con instrumentos válidos.
+
+criterios:
+  # ── Sección 1: TÍTULO (ítems 01-03 | 9.1% del puntaje total) ─────────────────
+  - nombre: "Título"
+    descripcion: "Claridad, articulación de variables y alineación con líneas de investigación UPAO (ítems 01-03)"
+    peso: 0.09
+    items_rubrica: [1, 2, 3]
+    niveles:
+      0: "Título ausente, incoherente o sin relación con el contenido del proyecto"
+      1: "Título presente pero no articula variables, espacio o tiempo de la investigación"
+      2: "Título claro pero con deficiencias en la articulación de variables o línea de investigación"
+      3: "Título claro, conciso, articula variables/espacio/tiempo y está enmarcado en línea UPAO"
+
+  # ── Sección 2: PLANTEAMIENTO DEL PROBLEMA (ítems 04-10 | 21.2%) ──────────────
+  - nombre: "Planteamiento del problema"
+    descripcion: "Descripción del problema, antecedentes, objetivos general/específicos, relevancia y justificación (ítems 04-10)"
+    peso: 0.21
+    items_rubrica: [4, 5, 6, 7, 8, 9, 10]
+    niveles:
+      0: "Sin planteamiento del problema o completamente incoherente; sin objetivos ni justificación"
+      1: "Problema vago, sin antecedentes claros; objetivos presentes pero no derivan del problema; justificación débil"
+      2: "Problema planteado con deficiencias menores; objetivos mayormente coherentes; justificación presente pero incompleta"
+      3: "Problema claramente descrito con antecedentes; objetivos coherentes y derivados; relevancia y justificación detalladas"
+
+  # ── Sección 3: MARCO TEÓRICO (ítems 11-17 | 21.2%) ──────────────────────────
+  - nombre: "Marco teórico"
+    descripcion: "Antecedentes, bases teóricas, definición de términos, citas y normas bibliográficas (ítems 11-17)"
+    peso: 0.21
+    items_rubrica: [11, 12, 13, 14, 15, 16, 17]
+    niveles:
+      0: "Sin marco teórico, sin antecedentes relacionados, sin definición de términos o citas incorrectas"
+      1: "Marco teórico superficial; antecedentes débilmente relacionados; citas sin postura crítica; normas no respetadas"
+      2: "Marco teórico adecuado con deficiencias menores en profundidad teórica o concordancia de citas"
+      3: "Antecedentes sólidos, bases teóricas relevantes, términos definidos, citas concordantes, normas APA correctas, postura crítica"
+
+  # ── Sección 4: HIPÓTESIS Y VARIABLES (ítems 18-21 | 12.1%) ───────────────────
+  - nombre: "Hipótesis y variables"
+    descripcion: "Formulación de hipótesis, operacionalización de variables y matriz de consistencia (ítems 18-21)"
+    peso: 0.12
+    items_rubrica: [18, 19, 20, 21]
+    niveles:
+      0: "Sin hipótesis o hipótesis inválida; variables sin definición operacional; sin matriz de consistencia"
+      1: "Hipótesis presentes pero no verificables; variables sin operacionalización; matriz de consistencia incompleta"
+      2: "Hipótesis verificables con observaciones menores; operacionalización con deficiencias; matriz parcialmente alineada"
+      3: "Hipótesis verificables y coherentes con el problema; operacionalización completa con dimensiones/indicadores; matriz alineada"
+
+  # ── Sección 5: MARCO METODOLÓGICO (ítems 22-27 | 18.2%) ─────────────────────
+  - nombre: "Marco metodológico"
+    descripcion: "Tipo/método/diseño de investigación, población/muestra, instrumentos, procedimientos y análisis (ítems 22-27)"
+    peso: 0.18
+    items_rubrica: [22, 23, 24, 25, 26, 27]
+    niveles:
+      0: "Sin metodología o metodología incoherente con el problema; sin instrumentos ni procedimientos"
+      1: "Metodología presente pero no justificada; diseño sin esquema; muestra sin cálculo estadístico; instrumentos vagos"
+      2: "Metodología adecuada con deficiencias en el diseño, muestra o instrumentos de recolección"
+      3: "Metodología rigurosa y coherente; diseño esquematizado; muestra con cálculo estadístico; instrumentos detallados; análisis apropiado"
+
+  # ── Sección 6: ASPECTOS ADMINISTRATIVOS (ítems 28-31 | 12.1%) ────────────────
+  - nombre: "Aspectos administrativos"
+    descripcion: "Cronograma, recursos humanos/materiales, presupuesto y fuentes de financiamiento (ítems 28-31)"
+    peso: 0.12
+    items_rubrica: [28, 29, 30, 31]
+    niveles:
+      0: "Sin cronograma, sin recursos definidos, sin presupuesto ni financiamiento"
+      1: "Aspectos administrativos presentes pero incompletos o sin detalle suficiente"
+      2: "Cronograma y presupuesto presentes con deficiencias menores en recursos o financiamiento"
+      3: "Cronograma detallado con todas las actividades; recursos, presupuesto y financiamiento claramente especificados"
+
+  # ── Sección 7: REFERENCIAS BIBLIOGRÁFICAS (ítems 32-33 | 6.1%) ───────────────
+  - nombre: "Referencias bibliográficas"
+    descripcion: "Incorporación de todos los autores citados y redacción conforme a normas internacionales (ítems 32-33)"
+    peso: 0.07
+    items_rubrica: [32, 33]
+    niveles:
+      0: "Referencias ausentes o con autores citados no incorporados; normas no respetadas"
+      1: "Referencias presentes pero incompletas; normas parcialmente respetadas"
+      2: "Referencias mayormente completas con deficiencias menores de formato"
+      3: "Todos los autores citados incorporados; redacción correcta según normas APA/VANCOUVER/HARVARD/ISO"

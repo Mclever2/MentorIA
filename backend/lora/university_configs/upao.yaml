@@ -1,0 +1,42 @@
+nombre: "Universidad Privada Antenor Orrego"
+codigo: "upao"
+pais: "Perú"
+
+# Contexto general que se inyecta en TODOS los subagentes de esta universidad
+contexto_institucional: |
+  Evalúas una tesis de la Universidad Privada Antenor Orrego (UPAO), Perú.
+  - Rúbrica oficial UPAO: escala 0-3 por ítem (0=Insuficiente, 1=Regular, 2=Bueno, 3=Excelente).
+  - Las referencias bibliográficas deben seguir normas APA 7ma edición.
+  - La investigación debe alinearse con las líneas de investigación aprobadas por UPAO.
+  - Considera el contexto peruano y latinoamericano en la evaluación metodológica.
+  - El jurado evaluador estará compuesto por docentes de la escuela profesional.
+
+programas:
+  ingenieria_de_sistemas:
+    nombre_completo: "Ingeniería de Sistemas"
+    enfasis_evaluacion: |
+      - El trabajo debe mostrar un aporte tecnológico concreto y replicable.
+      - Si es un proyecto de desarrollo: debe incluir arquitectura del sistema, diagramas UML y validación técnica.
+      - Si es investigación aplicada: debe demostrar relación entre variables con instrumentos válidos.
+      - Las métricas de evaluación del sistema deben ser medibles y justificadas.
+      - La metodología de desarrollo (ágil, cascada, prototipado) debe estar justificada.
+    drive_folder_id: null  # Reemplazar con el ID de carpeta Drive cuando esté disponible
+
+  pac:
+    nombre_completo: "Programa de Asistencia a Tesis (PAC)"
+    enfasis_evaluacion: |
+      - La rúbrica PAC es más detallada y exigente que la del programa regular.
+      - Mayor peso en originalidad del aporte y contribución a la disciplina.
+      - Se evalúa rigurosidad en la revisión del estado del arte (mínimo 30 referencias).
+      - Los instrumentos de investigación deben haber pasado por validación de expertos.
+      - La coherencia entre título, objetivos, hipótesis y conclusiones es crítica.
+    drive_folder_id: null
+
+  medicina:
+    nombre_completo: "Medicina Humana"
+    enfasis_evaluacion: |
+      - Las investigaciones deben contar con aprobación del Comité de Ética.
+      - Los estudios clínicos deben seguir la Declaración de Helsinki.
+      - Análisis estadístico: reportar intervalos de confianza y tamaño de efecto.
+      - Las referencias deben incluir literatura médica indexada (PubMed, Cochrane).
+    drive_folder_id: null

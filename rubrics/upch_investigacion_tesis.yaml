@@ -1,0 +1,114 @@
+universidad: "Universidad Peruana Cayetano Heredia"
+programa: "Investigacion"
+modalidad: "tesis"
+escala_minima: 0.5
+escala_maxima: 2.0
+# Puntaje total: 10 criterios × 2 pts = 20 pts → escala vigesimal directa
+# Niveles: Excelente (2) | Bueno (1.5) | Aceptable (1) | Bajo (0.5)
+
+instrucciones_auditor: |
+  Eres un auditor de proyectos de tesis de la Universidad Peruana Cayetano Heredia (UPCH).
+  La rúbrica UPCH tiene 10 criterios con escala: Excelente (2 pts) | Bueno (1.5 pts) | Aceptable (1 pt) | Bajo (0.5 pts).
+  Puntaje máximo: 20 pts (escala vigesimal directa).
+  Evalúa con objetividad. Las referencias deben seguir normas APA.
+  El trabajo debe alinearse con las líneas de investigación de la facultad.
+  Considera el reporte TURNITIN en la presentación del documento (debe ser ≤ 20%).
+  Responde SOLO con JSON: {"score": float, "errores": [lista], "feedback": string}
+
+instrucciones_metodologo: |
+  Eres un metodólogo científico especializado en investigación de la UPCH.
+  Verifica coherencia entre problema, objetivos, metodología propuesta y viabilidad.
+  Evalúa la originalidad y creatividad del enfoque investigativo.
+  Detecta problemas de rigor metodológico que la rúbrica formal no captura.
+  Verifica que el trabajo se vincule con las líneas de investigación institucionales.
+
+criterios:
+  - nombre: "Definición del problema de investigación"
+    descripcion: "El problema está claramente definido, es relevante para el ámbito, nivel educativo y propósito de la investigación"
+    peso: 0.10
+    niveles:
+      0.5: "El problema no está definido o carece de relevancia"
+      1.0: "El problema es difuso, con poca relevancia o bajo fundamento en la literatura"
+      1.5: "El problema está definido y es relevante, pero tiene deficiencias en su fundamentación o no está de acuerdo al propósito"
+      2.0: "El problema está claramente definido, es relevante para el ámbito y nivel, y está de acuerdo al propósito de la investigación"
+
+  - nombre: "Claridad de los objetivos de investigación"
+    descripcion: "Los objetivos son claros, específicos, medibles, verificables y en relación al propósito de la investigación"
+    peso: 0.10
+    niveles:
+      0.5: "No se presentan objetivos claros, o los que se presentan son irrelevantes para el tema"
+      1.0: "Los objetivos son vagos o poco específicos; falta claridad en su formulación"
+      1.5: "Los objetivos son en su mayoría claros y específicos, pero algunos no son verificables o medibles"
+      2.0: "Los objetivos son claros, específicos, medibles, verificables y en relación al propósito de la investigación"
+
+  - nombre: "Relevancia del tema de investigación"
+    descripcion: "El tema es relevante y está vinculado a las líneas de investigación propuestas por la facultad"
+    peso: 0.10
+    niveles:
+      0.5: "El tema es irrelevante y no tiene relación con las líneas de investigación de la facultad"
+      1.0: "El tema tiene baja relevancia y no se relaciona con las líneas de investigación de la facultad"
+      1.5: "El tema es relevante, pero no está vinculado con las líneas de investigación de la facultad"
+      2.0: "El tema es de alta relevancia y está claramente vinculado a las líneas de investigación de la facultad"
+
+  - nombre: "Justificación del estudio"
+    descripcion: "La justificación es sólida y persuasiva, presentando razones claras de por qué es importante realizar la investigación"
+    peso: 0.10
+    niveles:
+      0.5: "No hay justificación o lo presentado carece de relevancia y coherencia"
+      1.0: "La justificación es débil y no convence sobre la importancia del estudio"
+      1.5: "La justificación es adecuada, aunque podría especificar más las razones de la investigación"
+      2.0: "La justificación del estudio es sólida y persuasiva, presentando razones claras de su importancia"
+
+  - nombre: "Metodología propuesta"
+    descripcion: "La metodología responde a los objetivos planteados y guía el diseño de la investigación"
+    peso: 0.10
+    niveles:
+      0.5: "No hay metodología propuesta o es irrelevante para el estudio"
+      1.0: "La metodología es inadecuada o mal formulada para alcanzar los objetivos del estudio"
+      1.5: "La metodología es adecuada, pero no está explicada adecuadamente en el diseño de la investigación"
+      2.0: "La metodología responde a los objetivos planteados y guía el diseño de la investigación"
+
+  - nombre: "Revisión de literatura"
+    descripcion: "Se presenta una revisión exhaustiva y relevante que apoya el marco teórico del estudio"
+    peso: 0.10
+    niveles:
+      0.5: "No se presenta revisión de literatura, o las fuentes son irrelevantes o inadecuadas"
+      1.0: "La revisión es superficial y no proporciona suficiente respaldo al marco teórico"
+      1.5: "La revisión es adecuada, pero presenta pocas fuentes relevantes o actualizadas"
+      2.0: "Se presenta una revisión exhaustiva y relevante que apoya el marco teórico del estudio"
+
+  - nombre: "Viabilidad del proyecto"
+    descripcion: "El plan de investigación es viable considerando tiempos, recursos y acceso a la población objetivo"
+    peso: 0.10
+    niveles:
+      0.5: "El proyecto no es viable dado los recursos y el tiempo necesario para llevarlo a cabo"
+      1.0: "La viabilidad del proyecto es dudosa y presenta problemas significativos de recursos y tiempo"
+      1.5: "El plan es mayormente viable, aunque no especifica adecuadamente los recursos ni tiempo de ejecución"
+      2.0: "El plan de investigación es completamente viable, considerando tiempos, recursos y acceso a la población objetivo"
+
+  - nombre: "Presentación general del documento"
+    descripcion: "El documento está bien estructurado, sin errores gramaticales, sigue las normas de presentación y tiene TURNITIN ≤ 20%"
+    peso: 0.10
+    niveles:
+      0.5: "El documento es difícil de leer y presenta errores significativos en presentación y estructura"
+      1.0: "El documento carece de una clara estructura y presenta varios errores de gramática o formato"
+      1.5: "El documento es estructurado y legible, pero presenta algunos errores o falta un formato estándar"
+      2.0: "El documento está bien estructurado, con todos sus componentes, sin errores gramaticales, normas de presentación correctas y TURNITIN ≤ 20%"
+
+  - nombre: "Redacción, estilo y normatividad APA"
+    descripcion: "La redacción es fluida, clara, concisa y entendible; se aplica el formato APA tanto en citas como en referencias bibliográficas"
+    peso: 0.10
+    niveles:
+      0.5: "La redacción no es fluida ni entendible en la mayoría del documento; casi no se aplica formato de citación ni referencias"
+      1.0: "La redacción es fluida en algunas partes; no se aplica el formato de citación en el texto ni en las referencias"
+      1.5: "La redacción es fluida en su mayoría; se aplica el formato de citación en el texto pero no en las referencias"
+      2.0: "La redacción es fluida, clara, concisa y entendible; se aplica el formato APA en el texto y en referencias bibliográficas"
+
+  - nombre: "Originalidad y creatividad"
+    descripcion: "El plan de investigación demuestra un enfoque original y creativo en el tema tratado"
+    peso: 0.10
+    niveles:
+      0.5: "El plan no presenta ninguna idea original y parece ser una repetición de investigaciones anteriores sin aporte nuevo"
+      1.0: "El plan muestra poca originalidad, con enfoques que carecen de innovación o creatividad"
+      1.5: "El plan es en su mayoría original, aunque incorpora algunas ideas comunes o poco innovadoras"
+      2.0: "El plan de investigación demuestra un enfoque original y creativo en el tema tratado"

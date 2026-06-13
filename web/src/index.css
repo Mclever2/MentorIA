@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 14% 97%;
+    --foreground: 240 6% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 6% 10%;
+    --primary: 211 100% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 5% 93%;
+    --secondary-foreground: 240 6% 10%;
+    --muted: 240 5% 94%;
+    --muted-foreground: 240 4% 46%;
+    --accent: 211 100% 96%;
+    --accent-foreground: 211 100% 40%;
+    --destructive: 3 100% 59%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 6% 88%;
+    --input: 240 6% 88%;
+    --ring: 211 100% 50%;
+    --radius: 1rem;
+  }
+
+  .dark {
+    --background: 240 6% 7%;
+    --foreground: 0 0% 96%;
+    --card: 240 4% 11%;
+    --card-foreground: 0 0% 96%;
+    --primary: 211 100% 52%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4% 16%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 4% 64%;
+    --accent: 211 70% 16%;
+    --accent-foreground: 211 100% 70%;
+    --destructive: 3 100% 61%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 4% 20%;
+    --input: 240 4% 20%;
+    --ring: 211 100% 52%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_8px_30px_rgba(0,0,0,0.06)];
+  }
+  .dark .glass {
+    @apply bg-zinc-900/60 border-white/10 shadow-[0_8px_30px_rgba(0,0,0,0.35)];
+  }
+  .hairline {
+    box-shadow: 0 0 0 0.5px rgba(60, 60, 67, 0.22);
+  }
+  .text-gradient {
+    @apply bg-gradient-to-r from-[#007AFF] via-[#5856D6] to-[#AF52DE] bg-clip-text text-transparent;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(60, 60, 67, 0.25);
+  border-radius: 8px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.prose-informe h1 { @apply text-xl font-semibold mt-5 mb-2; }
+.prose-informe h2 { @apply text-lg font-semibold mt-5 mb-2; }
+.prose-informe h3 { @apply text-base font-semibold mt-4 mb-1.5; }
+.prose-informe p  { @apply my-2 leading-relaxed; }
+.prose-informe ul { @apply list-disc pl-5 my-2 space-y-1; }
+.prose-informe ol { @apply list-decimal pl-5 my-2 space-y-1; }
+.prose-informe strong { @apply font-semibold; }
+.prose-informe hr { @apply my-4 border-border; }
+.prose-informe blockquote { @apply border-l-2 border-primary/40 pl-3 text-muted-foreground my-2; }

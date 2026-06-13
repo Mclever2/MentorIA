@@ -1,0 +1,18 @@
+venv/
+.env
+.git/
+outputs/
+books/
+*.log
+
+# Python bytecode
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+**/*.pyc
+
+# Windows artifacts
+Thumbs.db
+desktop.ini

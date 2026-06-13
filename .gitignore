@@ -1,0 +1,50 @@
+# ===== Secretos / entorno =====
+.env
+.env.*
+!.env.example
+
+# ===== Python (backend / api / evaluator) =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# ===== Node / Vite / web =====
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+*.tsbuildinfo
+
+# ===== Datos y artefactos generados =====
+chroma_db/
+books/
+outputs/
+logs/
+*.log
+
+# ===== Supabase (se versiona el schema.sql, no los temporales) =====
+supabase/.branches/
+supabase/.temp/
+
+# ===== Editor / tooling =====
+.claude/
+.vscode/
+.idea/
+*.swp
+
+# ===== Sistema operativo =====
+.DS_Store
+Thumbs.db
+ehthumbs.db
+desktop.ini

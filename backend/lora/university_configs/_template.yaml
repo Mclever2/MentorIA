@@ -1,0 +1,29 @@
+# Plantilla para agregar una nueva universidad al sistema.
+# Copiar este archivo con el nombre del código de la universidad (ej: unmsm.yaml, pucp.yaml)
+# y completar los campos correspondientes.
+
+nombre: "Nombre Completo de la Universidad"
+codigo: "codigo_corto"  # Ej: unmsm, pucp, utp, udep
+pais: "País"
+
+contexto_institucional: |
+  Breve descripción del contexto institucional que todos los subagentes deben conocer.
+  - Escala de evaluación de la rúbrica (ej: 0-3, 0-4, 0-20).
+  - Normas bibliográficas requeridas (APA, Vancouver, IEEE, etc.).
+  - Énfasis institucional particular (humanista, tecnológico, científico, etc.).
+  - Contexto geográfico o cultural relevante para la evaluación.
+
+programas:
+  nombre_del_programa:                          # Ej: ingenieria_de_sistemas
+    nombre_completo: "Nombre Completo del Programa"
+    enfasis_evaluacion: |
+      - Criterios específicos del programa para la evaluación de tesis.
+      - Aspectos técnicos o disciplinares que deben verificarse.
+      - Herramientas o metodologías esperadas según el programa.
+      - Cualquier requerimiento adicional específico de este programa.
+    drive_folder_id: null                        # ID de la carpeta Google Drive con rúbricas
+                                                 # Ej: "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74"
+
+# Cómo agregar más programas:
+# Simplemente agregar otra entrada bajo "programas:" siguiendo el mismo formato.
+# El sistema cargará automáticamente el config correcto según estado["universidad"] y estado["programa"].

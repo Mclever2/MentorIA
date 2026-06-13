@@ -1,0 +1,25 @@
+nombre: "Universidad Peruana Cayetano Heredia"
+codigo: "upch"
+pais: "Perú"
+
+# Contexto general que se inyecta en TODOS los subagentes de esta universidad
+contexto_institucional: |
+  Evalúas una tesis de la Universidad Peruana Cayetano Heredia (UPCH), Perú.
+  - Rúbrica oficial UPCH: escala Excelente (2) | Bueno (1.5) | Aceptable (1) | Bajo (0.5) por criterio.
+  - Puntaje total: 10 criterios × 2 = 20 pts → escala vigesimal directa.
+  - Las referencias bibliográficas deben seguir normas APA.
+  - El trabajo debe estar vinculado a las líneas de investigación de la facultad.
+  - Se considera la originalidad y creatividad como criterio explícito de evaluación.
+  - El reporte TURNITIN debe ser menor o igual al 20% para la presentación del documento.
+
+programas:
+  investigacion:
+    nombre_completo: "Investigación"
+    enfasis_evaluacion: |
+      - Verificar que el problema esté claramente definido y sea relevante para el ámbito institucional.
+      - Los objetivos deben ser medibles y verificables, no solo enunciativos.
+      - La viabilidad del proyecto es un criterio explícito: evaluar tiempos, recursos y acceso a la población.
+      - La originalidad y creatividad son criterios de primer nivel — no basta con replicar metodologías anteriores.
+      - La revisión de literatura debe apoyar el marco teórico con fuentes actualizadas y relevantes.
+      - Verificar alineación con líneas de investigación de la facultad.
+    drive_folder_id: null

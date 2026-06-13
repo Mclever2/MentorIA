@@ -1,0 +1,23 @@
+{
+  "required_fields": [
+    "universidad",
+    "programa",
+    "modalidad",
+    "criterios",
+    "escala_minima",
+    "escala_maxima",
+    "instrucciones_auditor",
+    "instrucciones_metodologo"
+  ],
+  "criterios_schema": {
+    "nombre": "string",
+    "descripcion": "string",
+    "peso": "float — suma de todos los pesos debe ser 1.0",
+    "niveles": {
+      "0": "string — descripción de nivel 0",
+      "1": "string",
+      "2": "string",
+      "3": "string"
+    }
+  }
+}
