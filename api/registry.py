@@ -28,6 +28,9 @@ class DocumentoActivo:
     stats: list
     rubrica: Optional[dict] = None
     rubrica_nombre: Optional[str] = None
+    universidad: Optional[str] = None
+    programa: Optional[str] = None
+    perfil_institucional: Optional[str] = None
     creado_en: float = field(default_factory=time.time)
     evaluadas: set = field(default_factory=set)
     mejoras: dict = field(default_factory=dict)

@@ -37,7 +37,6 @@ from ._panel_utils import (
     ResultadoSubagente,
 )
 from backend.config import get_items_texto_para_seccion, get_puntaje_maximo_seccion
-from backend.rag.rubric_parser import rubrica_a_texto_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 class ItemEvaluado(BaseModel):
     item_numero: int = Field(ge=1, le=999, description="Número del ítem de la rúbrica")
-    puntaje:     int = Field(ge=0, le=3,   description="0=Insuficiente 1=Regular 2=Bueno 3=Excelente")
+    puntaje:     int = Field(ge=0, le=10,  description="Puntaje del ítem según la escala de la rúbrica (0 = no cumple, máximo = excelente)")
     observacion: str = Field(description="Observación específica para este ítem")
 
 
@@ -60,7 +59,7 @@ class AuditorOutput(BaseModel):
 def _extraer_score(output: AuditorOutput) -> float:
     return float(output.puntaje_total)
 
-def _extraer_items_error(output: AuditorOutput) -> list:
+def _extraer_items_error(output: AuditorOutput, umbral: int = 2) -> list:
     return [
         {
             "item_numero":    i.item_numero,
@@ -68,23 +67,21 @@ def _extraer_items_error(output: AuditorOutput) -> list:
             "descripcion":    i.observacion,
         }
         for i in output.items_evaluados
-        if i.puntaje < 2
+        if i.puntaje < umbral
     ]
 
 
 
-def _construir_rubrica(state: MentoriaState, seccion: str) -> tuple[str, int, str]:
-    """Retorna (items_texto, puntaje_max, descripcion_fuente)."""
+def _construir_rubrica(state: MentoriaState, seccion: str) -> tuple[str, int, str, int]:
+    """Retorna (items_texto, puntaje_max, descripcion_fuente, escala_max)."""
     universidad = state.get("universidad", "upao")
     programa    = state.get("programa", "ingeniería de sistemas")
 
     rubrica = state.get("rubrica_dinamica")
     if rubrica:
-        return (
-            rubrica_a_texto_prompt(rubrica),
-            rubrica.get("puntaje_maximo", len(rubrica.get("items", [])) * 3),
-            "rúbrica subida por el estudiante",
-        )
+        from ._rubrica import criterios_para_seccion
+        crit = criterios_para_seccion(state, seccion)
+        return crit["tabla_md"], crit["puntaje_max"], crit["fuente"], crit["escala_max"]
 
     from backend.config import _buscar_items_seccion, RUBRICA_ITEMS_UPAO
     items_seccion = _buscar_items_seccion(seccion)
@@ -99,7 +96,7 @@ def _construir_rubrica(state: MentoriaState, seccion: str) -> tuple[str, int, st
             lineas.append(f"| {num:02d} | {desc} | ___ |")
         items_texto = "\n".join(lineas)
         puntaje_max = len(items_seccion) * 3
-        return items_texto, puntaje_max, "rúbrica oficial UPAO (por ítems)"
+        return items_texto, puntaje_max, "rúbrica oficial UPAO (por ítems)", 3
 
     try:
         from context.context_loader import ContextLoader
@@ -126,8 +123,9 @@ def _construir_rubrica(state: MentoriaState, seccion: str) -> tuple[str, int, st
         for i, c in enumerate(crit, 1):
             lineas.append(f"| {i:02d} | {c['nombre']}: {c['descripcion']} | {c.get('peso', '')} | ___ |")
         items_texto = "\n".join(lineas)
-        puntaje_max = int(ctx.get("escala_maxima", 3) * len(crit))
-        return items_texto, puntaje_max, f"rúbrica dinámica — {ctx['universidad']}"
+        esc_ctx = int(ctx.get("escala_maxima", 3)) or 3
+        puntaje_max = esc_ctx * len(crit)
+        return items_texto, puntaje_max, f"rúbrica dinámica — {ctx['universidad']}", esc_ctx
     except Exception:
         pass
 
@@ -135,6 +133,7 @@ def _construir_rubrica(state: MentoriaState, seccion: str) -> tuple[str, int, st
         get_items_texto_para_seccion(seccion),
         get_puntaje_maximo_seccion(seccion),
         "rúbrica oficial UPAO",
+        3,
     )
 
 
@@ -162,7 +161,8 @@ def make_nodo_auditor(llm: ChatOpenAI):
         fuente_texto = "mejorado" if (n_iter > 0 and state.get("texto_iterado")) else "original"
         logger.info(f"[Auditor] Evaluando texto de {len(texto_a_evaluar)} chars | fuente: {fuente_texto}")
 
-        items_texto, puntaje_max, rubrica_desc = _construir_rubrica(state, seccion)
+        items_texto, puntaje_max, rubrica_desc, escala_max = _construir_rubrica(state, seccion)
+        umbral_aprob = max(1, round(escala_max * 2 / 3))  # ítem "en regla" si ≥ ~2/3 de la escala
 
         logger.info("[Auditor] Planificando contexto adicional con RAG dinámico…")
         contexto_dinamico = obtener_contexto_dinamico(
@@ -207,6 +207,7 @@ Tu tarea principal ahora es VERIFICAR SI ESTOS ERRORES FUERON CORREGIDOS en el n
             "texto_iterado":         texto_a_evaluar,
             "items_rubrica":         items_texto,
             "puntaje_max":           puntaje_max,
+            "escala_max":            escala_max,
             "rubrica_descripcion":   rubrica_desc,
             "contexto_dependencias": contexto_dinamico or state.get("contexto_dependencias") or "Sin contexto de secciones relacionadas.",
             "contexto_teorico":      state.get("contexto_teorico") or "",
@@ -221,7 +222,10 @@ Tu tarea principal ahora es VERIFICAR SI ESTOS ERRORES FUERON CORREGIDOS en el n
         from backend.lora.lora_configs import get_loras_para_agente, TIPO_AUDITOR
         from backend.mcp.tools import crear_fetch_para_lora
 
-        loras = get_loras_para_agente(TIPO_AUDITOR, universidad, programa)
+        loras = get_loras_para_agente(
+            TIPO_AUDITOR, universidad, programa,
+            perfil_override=state.get("perfil_institucional"),
+        )
 
         sub_items = []
         for lora in loras:
@@ -266,7 +270,7 @@ Tu tarea principal ahora es VERIFICAR SI ESTOS ERRORES FUERON CORREGIDOS en el n
         consolidado = consolidar_panel_evaluador(
             resultados=resultados,
             extraer_score=_extraer_score,
-            extraer_items=_extraer_items_error,
+            extraer_items=lambda o: _extraer_items_error(o, umbral_aprob),
             puntaje_max=puntaje_max,
         )
 
@@ -292,10 +296,10 @@ Tu tarea principal ahora es VERIFICAR SI ESTOS ERRORES FUERON CORREGIDOS en el n
                 for r in resultados:
                     if r.exitoso and r.output:
                         for item in r.output.items_evaluados:
-                            if item.puntaje <= 1:
+                            if item.puntaje < umbral_aprob:
                                 items_bajos.append({
                                     "item_numero":    item.item_numero,
-                                    "puntaje_actual": item.puntaje,
+                                    "puntaje_actual": max(0, min(item.puntaje, escala_max)),
                                     "descripcion":    item.observacion,
                                 })
                 if items_bajos:
@@ -331,7 +335,7 @@ Tu tarea principal ahora es VERIFICAR SI ESTOS ERRORES FUERON CORREGIDOS en el n
                 for it in r.output.items_evaluados:
                     todos_items_subagentes.append({
                         "item_numero": it.item_numero,
-                        "puntaje": it.puntaje,
+                        "puntaje": max(0, min(it.puntaje, escala_max)),
                         "observacion": it.observacion,
                     })
 

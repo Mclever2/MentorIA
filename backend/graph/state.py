@@ -54,6 +54,7 @@ class MentoriaState(TypedDict):
     universidad:              str
     programa:                 str
     modalidad:                str
+    perfil_institucional:     Optional[str]
 
     run_id:                   str
     puntaje_inicial:          Optional[float]

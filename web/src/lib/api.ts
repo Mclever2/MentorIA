@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import type { PerfilUniversidad, RubricaPersist } from "@/types";
 
 const API_URL = (import.meta.env.VITE_API_URL as string | undefined) || "";
 
@@ -18,6 +19,7 @@ export interface DocumentoInfo {
   estructura_toc: Record<string, number>;
   stats: SeccionStat[];
   rubrica: { nombre: string; total_items: number; puntaje_maximo: number } | null;
+  rubrica_full?: RubricaPersist | null;
 }
 
 export interface ChatRespuesta {
@@ -68,10 +70,14 @@ export interface DocMemoria {
 export async function subirDocumento(
   archivo: File,
   memoria?: DocMemoria | null,
+  rubrica?: RubricaPersist | null,
+  perfil?: PerfilUniversidad | null,
 ): Promise<DocumentoInfo> {
   const form = new FormData();
   form.append("archivo", archivo);
   if (memoria) form.append("memoria", JSON.stringify(memoria));
+  if (rubrica) form.append("rubrica", JSON.stringify(rubrica));
+  if (perfil) form.append("perfil_universidad", JSON.stringify(perfil));
   const res = await fetch(`${API_URL}/api/documentos`, {
     method: "POST",
     headers: await authHeaders(),
@@ -81,10 +87,71 @@ export async function subirDocumento(
   return res.json();
 }
 
-export async function subirRubrica(docId: string, archivo: File) {
+export interface SubirRubricaResp {
+  rubrica: RubricaPersist;
+  nombre: string;
+  total_items: number;
+  secciones?: number;
+  secciones_mapeadas?: number;
+  puntaje_maximo: number;
+}
+
+export async function subirRubrica(docId: string, archivo: File): Promise<SubirRubricaResp> {
   const form = new FormData();
   form.append("archivo", archivo);
   const res = await fetch(`${API_URL}/api/documentos/${docId}/rubrica`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: form,
+  });
+  if (!res.ok) await manejarError(res);
+  return res.json();
+}
+
+/** Sincroniza rúbrica/perfil en el documento vivo del backend (sin re-indexar). */
+export async function setRecursosDoc(
+  docId: string,
+  body: {
+    rubrica?: RubricaPersist | null;
+    perfil_universidad?: PerfilUniversidad | null;
+    limpiar_rubrica?: boolean;
+    limpiar_perfil?: boolean;
+  },
+): Promise<void> {
+  const res = await fetch(`${API_URL}/api/documentos/${docId}/recursos`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) await manejarError(res);
+}
+
+export async function buscarUniversidad(
+  universidad: string,
+  programa = "ingeniería de sistemas",
+  nivel = "tesis",
+): Promise<{ encontrado: boolean; perfil?: PerfilUniversidad; motivo?: string }> {
+  const res = await fetch(`${API_URL}/api/universidad/buscar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ universidad, programa, nivel }),
+  });
+  if (!res.ok) await manejarError(res);
+  return res.json();
+}
+
+export async function subirReglamento(
+  archivo: File,
+  universidad: string,
+  programa = "ingeniería de sistemas",
+  nivel = "tesis",
+): Promise<{ perfil: PerfilUniversidad }> {
+  const form = new FormData();
+  form.append("archivo", archivo);
+  form.append("universidad", universidad);
+  form.append("programa", programa);
+  form.append("nivel", nivel);
+  const res = await fetch(`${API_URL}/api/universidad/subir`, {
     method: "POST",
     headers: await authHeaders(),
     body: form,

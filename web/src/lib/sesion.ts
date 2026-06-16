@@ -3,6 +3,7 @@
 // y re-indexar el proyecto para seguir el hilo exactamente donde quedó.
 import { subirDocumento, type DocMemoria, type DocumentoInfo } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
+import type { PerfilUniversidad, RubricaPersist } from "@/types";
 
 const BUCKET = "tesis";
 
@@ -13,6 +14,8 @@ export interface DocPersistido {
   toc: Record<string, number>;
   stats: DocumentoInfo["stats"];
   memoria: DocMemoria;
+  rubrica: RubricaPersist | null;
+  perfil: PerfilUniversidad | null;
 }
 
 export const memoriaVacia = (): DocMemoria => ({
@@ -77,7 +80,7 @@ export async function leerDocPersistido(convId: string): Promise<DocPersistido |
   if (!supabase) return null;
   const { data } = await supabase
     .from("conversaciones")
-    .select("doc_nombre, doc_hash, doc_storage_path, doc_toc, doc_stats, doc_memoria")
+    .select("doc_nombre, doc_hash, doc_storage_path, doc_toc, doc_stats, doc_memoria, rubrica, perfil_universidad")
     .eq("id", convId)
     .single();
   if (!data || !data.doc_storage_path) return null;
@@ -88,10 +91,12 @@ export async function leerDocPersistido(convId: string): Promise<DocPersistido |
     toc: data.doc_toc ?? {},
     stats: data.doc_stats ?? [],
     memoria: (data.doc_memoria as DocMemoria) ?? memoriaVacia(),
+    rubrica: (data.rubrica as RubricaPersist) ?? null,
+    perfil: (data.perfil_universidad as PerfilUniversidad) ?? null,
   };
 }
 
-/** Re-indexa el PDF desde Storage y reaplica la memoria → DocumentoInfo vivo. */
+/** Re-indexa el PDF desde Storage y reaplica memoria + rúbrica + perfil → DocumentoInfo vivo. */
 export async function rehidratar(persistido: DocPersistido): Promise<DocumentoInfo | null> {
   if (!supabase) return null;
   const { data, error } = await supabase.storage.from(BUCKET).download(persistido.storagePath);
@@ -100,5 +105,5 @@ export async function rehidratar(persistido: DocPersistido): Promise<DocumentoIn
     return null;
   }
   const archivo = new File([data], persistido.nombre, { type: "application/pdf" });
-  return subirDocumento(archivo, persistido.memoria);
+  return subirDocumento(archivo, persistido.memoria, persistido.rubrica, persistido.perfil);
 }

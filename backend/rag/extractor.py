@@ -118,6 +118,23 @@ def extraer_contenido_sin_indice(
 
     estructura_toc = _parsear_toc(paginas_toc_texto)
 
+    # Carátula / preliminares: las páginas anteriores a la 1ª sección numerada
+    # (portada con el TÍTULO, dedicatoria, resumen…) no tienen entrada en el TOC
+    # y se perderían. Las indexamos como sección sintética "Título del proyecto"
+    # para poder evaluar el título y mapearle los ítems de rúbrica correspondientes.
+    if estructura_toc and paginas_contenido:
+        primera_pag_contenido = min(p for p, _ in paginas_contenido)
+        primera_pag_seccion = min(estructura_toc.values())
+        if primera_pag_contenido < primera_pag_seccion:
+            estructura_toc = {
+                "Título del proyecto": primera_pag_contenido,
+                **estructura_toc,
+            }
+            logger.info(
+                f"Carátula detectada (págs {primera_pag_contenido}–{primera_pag_seccion - 1}) "
+                "→ indexada como 'Título del proyecto'"
+            )
+
     logger.info(
         f"Extracción inteligente: {len(paginas_contenido)} páginas de contenido, "
         f"{n_toc} páginas de índice omitidas, "

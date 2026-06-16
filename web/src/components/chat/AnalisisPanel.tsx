@@ -232,7 +232,7 @@ function TabRubrica({ d }: { d: AnalisisDetalle }) {
   return (
     <>
       {final.length > 0 ? (
-        <Tarjeta titulo="Rúbrica UPAO — texto final (tachado: puntaje del texto original)">
+        <Tarjeta titulo="Rúbrica — texto final (tachado: puntaje del texto original)">
           <ul>
             {final.map((it) => (
               <FilaItem key={it.item_numero} item={it} antes={antesPorItem.get(it.item_numero)} />
@@ -240,7 +240,7 @@ function TabRubrica({ d }: { d: AnalisisDetalle }) {
           </ul>
         </Tarjeta>
       ) : inicial.length > 0 ? (
-        <Tarjeta titulo="Rúbrica UPAO — evaluación del texto original">
+        <Tarjeta titulo="Rúbrica — evaluación del texto original">
           <ul>
             {inicial.map((it) => (
               <FilaItem key={it.item_numero} item={it} />

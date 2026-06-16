@@ -75,19 +75,39 @@ def _recuperar_libros(biblioteca, consulta: str) -> tuple[str, str]:
 def _recuperar_tesis(doc, consulta: str) -> str:
     if doc is None:
         return ""
+
+    vs = doc.vector_store
+    fragmentos: list[tuple[str, str]] = []  # (seccion, texto)
+    vistos: set[str] = set()
+
+    # Siempre incluir la carátula/«Título del proyecto»: así el mentor conoce el
+    # título y datos generales aunque la pregunta no se parezca a la portada.
     try:
-        docs = doc.vector_store.similarity_search(consulta, k=_K_TESIS)
+        res = vs._collection.get(
+            where={"seccion": "Título del proyecto"}, include=["documents"]
+        )
+        for t in (res.get("documents") or [])[:1]:
+            if t and t not in vistos:
+                fragmentos.append(("Título del proyecto", t))
+                vistos.add(t)
+    except Exception:
+        pass
+
+    # Fragmentos relevantes a la consulta.
+    try:
+        for d in vs.similarity_search(consulta, k=_K_TESIS):
+            if d.page_content in vistos:
+                continue
+            fragmentos.append((d.metadata.get("seccion", ""), d.page_content))
+            vistos.add(d.page_content)
     except Exception as exc:
         logger.warning(f"[conversador] Error RAG tesis: {exc}")
+
+    if not fragmentos:
         return ""
-    if not docs:
-        return ""
-    partes = []
-    for d in docs:
-        sec = d.metadata.get("seccion", "")
-        etiqueta = f"[{sec}]" if sec else "[fragmento]"
-        partes.append(f"{etiqueta}\n{d.page_content[:_MAX_CHARS_FRAG]}")
-    return "\n\n---\n\n".join(partes)
+    return "\n\n---\n\n".join(
+        f"[{sec or 'fragmento'}]\n{texto[:_MAX_CHARS_FRAG]}" for sec, texto in fragmentos
+    )
 
 
 def _estado_proyecto(doc) -> str:

@@ -77,7 +77,10 @@ def make_nodo_disenso(llm: ChatOpenAI):
         from backend.lora.lora_configs import get_loras_para_agente, TIPO_DISENSO
         from backend.mcp.tools import crear_fetch_para_lora
 
-        loras = get_loras_para_agente(TIPO_DISENSO, universidad, programa)
+        loras = get_loras_para_agente(
+            TIPO_DISENSO, universidad, programa,
+            perfil_override=state.get("perfil_institucional"),
+        )
 
         sub_items = []
 

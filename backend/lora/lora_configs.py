@@ -295,6 +295,7 @@ def get_loras_para_agente(
     tipo_agente: str,
     universidad:  str = "upao",
     programa:     str = "ingeniería de sistemas",
+    perfil_override: Optional[str] = None,
 ) -> list[LoraConfig]:
     """
     Retorna la lista de LoraConfig para el agente indicado,
@@ -304,6 +305,10 @@ def get_loras_para_agente(
         tipo_agente:  "auditor" | "metodologo" | "redactor" | "disenso"
         universidad:  Código de universidad (ej: "upao", "ucb", "pac")
         programa:     Nombre del programa académico
+        perfil_override: Perfil institucional destilado de los reglamentos
+                         (Tavily o documento subido). Si se pasa, reemplaza el
+                         contexto del YAML estático — así los agentes adaptan su
+                         personalidad a la universidad elegida por el estudiante.
 
     Returns:
         Lista de LoraConfig con universidad_ctx y drive_folder_id ya completados.
@@ -313,7 +318,10 @@ def get_loras_para_agente(
         logger.error(f"[LoRA] Tipo de agente desconocido: '{tipo_agente}'")
         return []
 
-    ctx_universidad, drive_folder_id = _obtener_contexto_universidad(universidad, programa)
+    if perfil_override and perfil_override.strip():
+        ctx_universidad, drive_folder_id = perfil_override.strip(), None
+    else:
+        ctx_universidad, drive_folder_id = _obtener_contexto_universidad(universidad, programa)
 
     configs = []
     for b in bases:

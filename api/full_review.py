@@ -69,8 +69,26 @@ NO reescribas la tesis. NO inventes contenido que no esté en los diagnósticos.
 Máximo ~450 palabras."""
 
 
-def _criterios_para_unidad(unidad: str, secciones_raw: list[str]) -> str:
-    """Tabla de ítems de rúbrica aplicables a la unidad (anclada a la sección de rúbrica)."""
+_CRITERIOS_GENERICOS_TXT = (
+    "- Claridad, coherencia y registro académico del texto.\n"
+    "- Rigor metodológico y consistencia con el resto del proyecto."
+)
+
+
+def _criterios_para_unidad(unidad: str, secciones_raw: list[str], rubrica: dict | None = None) -> str:
+    """Ítems de rúbrica aplicables a la unidad. Usa la rúbrica subida si existe."""
+    if rubrica:
+        from backend.rag.rubric_parser import items_para_seccion
+        items = items_para_seccion(rubrica, unidad)
+        if not items:
+            for s in secciones_raw:
+                items = items_para_seccion(rubrica, s)
+                if items:
+                    break
+        if not items:
+            return _CRITERIOS_GENERICOS_TXT
+        return "\n".join(f"{it['numero']:02d}. {it.get('descripcion', '')}" for it in items)
+
     nums = _buscar_items_seccion(unidad)
     if not nums:
         for s in secciones_raw:
@@ -78,10 +96,7 @@ def _criterios_para_unidad(unidad: str, secciones_raw: list[str]) -> str:
             if nums:
                 break
     if not nums:
-        return (
-            "- Claridad, coherencia y registro académico del texto.\n"
-            "- Rigor metodológico y consistencia con el resto del proyecto."
-        )
+        return _CRITERIOS_GENERICOS_TXT
     return "\n".join(f"{n:02d}. {RUBRICA_ITEMS_UPAO[n]}" for n in nums)
 
 
@@ -135,9 +150,9 @@ def _ventanas(chunks: list[str], max_chars: int = _MAX_CHARS_VENTANA) -> list[st
     return ventanas or [""]
 
 
-def _diagnosticar_unidad(llm, u: dict) -> dict:
+def _diagnosticar_unidad(llm, u: dict, rubrica: dict | None = None) -> dict:
     """Diagnostica una unidad completa (con ventaneo si excede el presupuesto)."""
-    criterios = _criterios_para_unidad(u["unidad"], u["secciones_raw"])
+    criterios = _criterios_para_unidad(u["unidad"], u["secciones_raw"], rubrica)
     ventanas  = _ventanas(u["chunks"])
 
     puntajes: list[int] = []
@@ -199,7 +214,7 @@ def ejecutar_revision_completa(
 
         yield {"tipo": "progreso", "detalle": f"Analizando «{u['unidad']}»…"}
 
-        diag = _diagnosticar_unidad(llm, u)
+        diag = _diagnosticar_unidad(llm, u, doc.rubrica)
         diagnosticos.append(diag)
         yield {"tipo": "diagnostico", "capitulo": diag["unidad"],
                "puntaje": diag["puntaje"], "debilidades": diag["debilidades"]}

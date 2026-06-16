@@ -81,6 +81,8 @@ def biblioteca(_user: dict = Depends(usuario_actual)):
 async def subir_documento(
     archivo: UploadFile = File(...),
     memoria: str = Form(default=""),
+    rubrica: str = Form(default=""),
+    perfil_universidad: str = Form(default=""),
     user: dict = Depends(usuario_actual),
 ):
     """
@@ -88,6 +90,9 @@ async def subir_documento(
 
     `memoria` (JSON opcional) llega en la rehidratación de un chat: reconstruye
     las secciones evaluadas y reaplica el texto corregido a la memoria RAG.
+    `rubrica` y `perfil_universidad` (JSON opcionales) son el snapshot de la
+    sesión: la rúbrica ya parseada/mapeada y el perfil de universidad destilado,
+    para que el doc quede listo sin re-procesar.
     """
     import json as _json
 
@@ -110,9 +115,14 @@ async def subir_documento(
         except Exception:
             logger.warning("[documentos] memoria malformada, se ignora")
 
+    rubrica_dict = _parse_json_form(rubrica, "rubrica")
+    perfil_dict = _parse_json_form(perfil_universidad, "perfil_universidad")
+
     existente = registry.buscar_documento_por_hash(user_id, pdf_hash)
     if existente:
-        # Ya está en memoria del proceso (mismo instante): conserva su estado.
+        # Ya está en memoria del proceso (mismo instante): conserva su estado,
+        # pero refresca el snapshot de rúbrica/perfil por si cambió en la sesión.
+        _aplicar_recursos_sesion(existente, rubrica_dict, perfil_dict)
         return _documento_a_json(existente, ya_indexado=True)
 
     try:
@@ -144,11 +154,52 @@ async def subir_documento(
         stats=stats,
     )
 
+    _aplicar_recursos_sesion(doc, rubrica_dict, perfil_dict)
+
     if memoria_dict:
         mejoras.restaurar_memoria(doc, memoria_dict)
 
     logger.info(f"[documentos] '{doc.nombre}' indexado — {len(stats)} secciones")
     return _documento_a_json(doc)
+
+
+def _parse_json_form(valor: str, etiqueta: str) -> dict:
+    """Parsea un campo de formulario JSON; devuelve {} si está vacío o malformado."""
+    import json as _json
+    if not valor:
+        return {}
+    try:
+        data = _json.loads(valor)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        logger.warning(f"[documentos] {etiqueta} malformado, se ignora")
+        return {}
+
+
+def _aplicar_recursos_sesion(doc, rubrica_dict: dict, perfil_dict: dict) -> None:
+    """Adjunta al documento el snapshot de rúbrica y perfil de universidad de la sesión.
+
+    Si la rúbrica llegó sin `mapa_secciones` (se subió antes que el proyecto), se
+    mapea ahora contra el TOC real del documento.
+    """
+    if rubrica_dict and rubrica_dict.get("items"):
+        doc.rubrica = rubrica_dict
+        doc.rubrica_nombre = rubrica_dict.get("nombre") or doc.rubrica_nombre
+
+    if doc.rubrica and not (doc.rubrica.get("mapa_secciones")) and doc.estructura_toc:
+        try:
+            from .rubrica_service import mapear_rubrica
+            mapear_rubrica(doc.rubrica, doc.estructura_toc)
+            logger.info("[documentos] Rúbrica mapeada al TOC del proyecto.")
+        except Exception:
+            logger.exception("[documentos] No se pudo mapear la rúbrica al TOC")
+
+    if perfil_dict:
+        doc.universidad = perfil_dict.get("universidad") or doc.universidad
+        doc.programa = perfil_dict.get("programa") or doc.programa
+        ctx = perfil_dict.get("contexto_institucional") or ""
+        enf = perfil_dict.get("enfasis") or ""
+        doc.perfil_institucional = (ctx + ("\n\n" + enf if enf else "")).strip() or doc.perfil_institucional
 
 
 def _documento_a_json(doc, ya_indexado: bool = False) -> dict:
@@ -165,6 +216,9 @@ def _documento_a_json(doc, ya_indexado: bool = False) -> dict:
              "puntaje_maximo": doc.rubrica.get("puntaje_maximo")}
             if doc.rubrica else None
         ),
+        # Rúbrica completa (incluye mapa_secciones ya calculado) para que el
+        # frontend re-persista el snapshot mapeado tras indexar el proyecto.
+        "rubrica_full":   doc.rubrica if doc.rubrica else None,
     }
 
 
@@ -174,23 +228,34 @@ async def subir_rubrica(
     archivo: UploadFile = File(...),
     user: dict = Depends(usuario_actual),
 ):
-    from backend.rag import parse_rubrica_pdf
+    """Parsea, valida y mapea la rúbrica a las secciones del proyecto.
+
+    Devuelve la rúbrica completa (incluido `mapa_secciones`) para que el frontend
+    la persista como snapshot de la sesión y default del usuario.
+    """
+    from .rubrica_service import procesar_rubrica, RubricaInvalida
 
     doc = _obtener_doc_o_404(doc_id, user)
     contenido = await archivo.read()
-    rubrica = parse_rubrica_pdf(contenido)
-    if rubrica is None:
-        raise HTTPException(
-            status_code=422,
-            detail="No se pudo parsear la rúbrica. Debe tener ítems numerados (01, 02…) "
-                   "y secciones visibles. Se seguirá usando la rúbrica UPAO por defecto.",
-        )
+    try:
+        rubrica = procesar_rubrica(contenido, doc.estructura_toc)
+    except RubricaInvalida as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        logger.exception("[rubrica] Error procesando")
+        raise HTTPException(status_code=500, detail=f"Error procesando la rúbrica: {exc}")
+
+    rubrica["nombre"] = archivo.filename or "rúbrica.pdf"
     doc.rubrica = rubrica
-    doc.rubrica_nombre = archivo.filename
+    doc.rubrica_nombre = rubrica["nombre"]
+
+    secciones_mapeadas = sum(1 for v in (rubrica.get("mapa_secciones") or {}).values() if v)
     return {
-        "nombre": archivo.filename,
+        "rubrica": rubrica,
+        "nombre": rubrica["nombre"],
         "total_items": rubrica["total_items"],
-        "secciones": len(rubrica["secciones"]),
+        "secciones": len(rubrica.get("secciones", {})),
+        "secciones_mapeadas": secciones_mapeadas,
         "puntaje_maximo": rubrica["puntaje_maximo"],
     }
 
@@ -204,6 +269,87 @@ def _obtener_doc_o_404(doc_id: str, user: dict):
                    "Vuelve a subir tu PDF para continuar.",
         )
     return doc
+
+
+class BuscarUniversidadRequest(BaseModel):
+    universidad: str
+    programa: str = "ingeniería de sistemas"
+    nivel: str = "tesis"
+
+
+@app.post("/api/universidad/buscar")
+def buscar_universidad(req: BuscarUniversidadRequest, _user: dict = Depends(usuario_actual)):
+    """Busca reglamentos de la universidad (Tavily) y destila un perfil.
+
+    Si no encuentra material útil, devuelve {encontrado: false} para que el
+    frontend ofrezca subir el reglamento manualmente.
+    """
+    from .reglamento_service import perfil_desde_busqueda
+
+    universidad = (req.universidad or "").strip()
+    if not universidad:
+        raise HTTPException(status_code=422, detail="Indica el nombre de la universidad.")
+
+    try:
+        res = perfil_desde_busqueda(universidad, req.programa, req.nivel)
+    except Exception as exc:
+        logger.exception("[universidad] Error en búsqueda")
+        raise HTTPException(status_code=500, detail=f"Error buscando reglamentos: {exc}")
+
+    if not res.get("ok"):
+        return {"encontrado": False, "motivo": res.get("motivo")}
+    return {"encontrado": True, "perfil": res["perfil"]}
+
+
+@app.post("/api/universidad/subir")
+async def subir_reglamento(
+    archivo: UploadFile = File(...),
+    universidad: str = Form(...),
+    programa: str = Form(default="ingeniería de sistemas"),
+    nivel: str = Form(default="tesis"),
+    _user: dict = Depends(usuario_actual),
+):
+    """Destila el perfil institucional desde un reglamento subido (PDF/.docx)."""
+    from .reglamento_service import perfil_desde_documento, ReglamentoInvalido
+
+    contenido = await archivo.read()
+    try:
+        perfil = perfil_desde_documento(
+            archivo.filename or "reglamento.pdf", contenido,
+            (universidad or "").strip(), programa, nivel,
+        )
+    except ReglamentoInvalido as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        logger.exception("[universidad] Error procesando reglamento")
+        raise HTTPException(status_code=500, detail=f"Error procesando el reglamento: {exc}")
+
+    return {"perfil": perfil}
+
+
+class RecursosRequest(BaseModel):
+    rubrica: dict | None = None
+    perfil_universidad: dict | None = None
+    limpiar_rubrica: bool = False
+    limpiar_perfil: bool = False
+
+
+@app.post("/api/documentos/{doc_id}/recursos")
+def set_recursos(doc_id: str, req: RecursosRequest, user: dict = Depends(usuario_actual)):
+    """Sincroniza rúbrica/perfil en el documento vivo cuando cambian desde el navbar.
+
+    Evita re-indexar el PDF: solo actualiza lo que los agentes usarán en el próximo run.
+    """
+    doc = _obtener_doc_o_404(doc_id, user)
+    if req.limpiar_rubrica:
+        doc.rubrica = None
+        doc.rubrica_nombre = None
+    if req.limpiar_perfil:
+        doc.universidad = None
+        doc.programa = None
+        doc.perfil_institucional = None
+    _aplicar_recursos_sesion(doc, req.rubrica or {}, req.perfil_universidad or {})
+    return {"ok": True}
 
 
 

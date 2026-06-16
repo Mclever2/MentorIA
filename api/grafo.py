@@ -39,6 +39,7 @@ def construir_estado_inicial(
     universidad: str = "upao",
     programa: str = "ingeniería de sistemas",
     modalidad: str = "tesis",
+    perfil_institucional: Optional[str] = None,
 ) -> dict:
     """Mismo estado inicial que usaba el frontend Streamlit."""
     return {
@@ -46,6 +47,7 @@ def construir_estado_inicial(
         "universidad":                 universidad,
         "programa":                    programa,
         "modalidad":                   modalidad,
+        "perfil_institucional":        perfil_institucional,
         "puntaje_inicial":             0.0,
         "seccion_objetivo":            seccion,
         "contexto_recuperado":         contexto_tesis,
@@ -137,6 +139,9 @@ def ejecutar_seccion(
         contexto_teorico=contexto_teo,
         rubrica_dinamica=doc.rubrica,
         max_iteraciones=max_iteraciones,
+        universidad=doc.universidad or "upao",
+        programa=doc.programa or "ingeniería de sistemas",
+        perfil_institucional=doc.perfil_institucional,
     )
 
     graph = get_graph()
@@ -192,16 +197,21 @@ def _leer_metricas(run_id: str) -> dict:
         return {}
 
 
-def _enriquecer_evaluacion(items: list) -> list:
-    """Añade el texto del criterio UPAO a cada ítem evaluado."""
+def _enriquecer_evaluacion(items: list, rubrica: dict | None = None) -> list:
+    """Añade el texto del criterio a cada ítem evaluado.
+
+    Si hay rúbrica subida usa SUS descripciones; si no, la rúbrica oficial UPAO.
+    """
     from backend.config import RUBRICA_ITEMS_UPAO
+    from backend.rag.rubric_parser import texto_criterio_rubrica
 
     salida = []
     for it in items or []:
         num = it.get("item_numero")
+        criterio = texto_criterio_rubrica(rubrica, num) if rubrica else RUBRICA_ITEMS_UPAO.get(num, "")
         salida.append({
             "item_numero": num,
-            "criterio":    RUBRICA_ITEMS_UPAO.get(num, ""),
+            "criterio":    criterio,
             "puntaje":     it.get("puntaje", it.get("puntaje_actual", 0)),
             "observacion": it.get("observacion", it.get("descripcion", "")),
         })
@@ -253,8 +263,8 @@ def _construir_detalle(estado: dict, seccion: str, run_id: str) -> dict:
              "descripcion": e.get("descripcion", "")}
             for e in errores
         ],
-        "evaluacion_inicial": _enriquecer_evaluacion(estado.get("evaluacion_upao_inicial")),
-        "evaluacion_final":   _enriquecer_evaluacion(estado.get("evaluacion_upao_final")),
+        "evaluacion_inicial": _enriquecer_evaluacion(estado.get("evaluacion_upao_inicial"), estado.get("rubrica_dinamica")),
+        "evaluacion_final":   _enriquecer_evaluacion(estado.get("evaluacion_upao_final"), estado.get("rubrica_dinamica")),
         "consenso":          (estado.get("resultado_consenso") or "")[:4000],
         "disenso":           (estado.get("resultado_disenso") or "")[:4000],
         "debate":            _resumir_debate(estado),

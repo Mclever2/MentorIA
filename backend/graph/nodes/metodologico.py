@@ -66,10 +66,9 @@ def make_nodo_metodologico(llm: ChatOpenAI):
             f"Universidad: {universidad}"
         )
 
-        from backend.config import _buscar_items_seccion, RUBRICA_ITEMS_UPAO
-        items_nums = _buscar_items_seccion(seccion)
-        criterios_lista = [f"- Ítem {n}: {RUBRICA_ITEMS_UPAO.get(n)}" for n in items_nums]
-        criterios_str = "\n".join(criterios_lista)
+        from ._rubrica import criterios_para_seccion
+        crit = criterios_para_seccion(state, seccion)
+        criterios_str = crit["criterios_str"]
 
         logger.info("[Metodólogo] Planificando contexto adicional con RAG dinámico…")
         contexto_dinamico = obtener_contexto_dinamico(
@@ -98,7 +97,10 @@ def make_nodo_metodologico(llm: ChatOpenAI):
         from backend.lora.lora_configs import get_loras_para_agente, TIPO_METODOLOGO
         from backend.mcp.tools import crear_fetch_para_lora
 
-        loras = get_loras_para_agente(TIPO_METODOLOGO, universidad, programa)
+        loras = get_loras_para_agente(
+            TIPO_METODOLOGO, universidad, programa,
+            perfil_override=state.get("perfil_institucional"),
+        )
 
         sub_items = []
 

@@ -66,6 +66,34 @@ export interface Conversacion {
   creada_en: string;
 }
 
+// Rúbrica subida por el estudiante (snapshot por sesión + default del usuario).
+export interface RubricaItemDef {
+  numero: number;
+  descripcion: string;
+  seccion?: string;
+}
+
+export interface RubricaPersist {
+  nombre: string;
+  items: RubricaItemDef[];
+  mapa_secciones?: Record<string, number[]>;
+  secciones?: Record<string, number[]>;
+  escala?: Record<string, string>;
+  total_items: number;
+  puntaje_maximo: number;
+}
+
+// Perfil institucional destilado de los reglamentos de la universidad.
+export interface PerfilUniversidad {
+  universidad: string;
+  programa: string;
+  nivel: string;
+  contexto_institucional: string;
+  enfasis: string;
+  fuente: string;
+  advertencia?: string;
+}
+
 export interface PasoProgreso {
   id: number;
   texto: string;

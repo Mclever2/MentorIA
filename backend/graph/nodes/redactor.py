@@ -136,10 +136,9 @@ def make_nodo_redactor(llm: ChatOpenAI):
 
         logger.info("[Redactor] Subagente 1 ejecutando reescritura del texto...")
         
-        from backend.config import _buscar_items_seccion, RUBRICA_ITEMS_UPAO
-        items_nums = _buscar_items_seccion(seccion)
-        criterios_lista = [f"- Ítem {n}: {RUBRICA_ITEMS_UPAO.get(n)}" for n in items_nums]
-        criterios_str = "\n".join(criterios_lista)
+        from ._rubrica import criterios_para_seccion
+        crit = criterios_para_seccion(state, seccion)
+        criterios_str = crit["criterios_str"]
 
         contexto_dinamico = obtener_contexto_dinamico(
             llm              = llm,
@@ -178,6 +177,7 @@ def make_nodo_redactor(llm: ChatOpenAI):
             "errores_confirmados":      _formatear_errores(state.get("errores_rubrica") or []),
             "universidad":              universidad,
             "programa":                 programa,
+            "perfil_institucional":     state.get("perfil_institucional") or "Sin lineamientos institucionales adicionales.",
             "contexto_secciones_relacionadas": "",
         }
 
@@ -190,6 +190,7 @@ def make_nodo_redactor(llm: ChatOpenAI):
                 "**FEEDBACK METODOLÓGICO:**\n{observaciones_metodologicas}\n\n"
                 "**CONTEXTO RAG DE LIBROS:**\n{contexto_teorico}\n\n"
                 "**CONTEXTO DE OTRAS SECCIONES:**\n{contexto_dependencias}\n\n"
+                "**LINEAMIENTOS DE LA UNIVERSIDAD (ajusta el estilo y exigencias a esto):**\n{perfil_institucional}\n\n"
                 "Responde únicamente con el texto mejorado."
             )),
         ])

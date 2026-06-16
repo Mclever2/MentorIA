@@ -227,3 +227,54 @@ def rubrica_a_texto_prompt(rubrica: dict) -> str:
         lineas.append(f"| {item['numero']:02d} | {item['descripcion']} | ___ |")
 
     return "\n".join(lineas)
+
+
+# ── Consulta de la rúbrica dinámica por sección ─────────────────────────────
+# Helpers puros sobre el dict de rúbrica (con `mapa_secciones` precomputado por
+# api/rubrica_service.py). Viven en backend para que tanto el grafo como la API
+# los usen sin que backend dependa de api.
+
+def escala_max_rubrica(rubrica: dict) -> int:
+    """Puntaje máximo por ítem según la escala de la rúbrica (default 3)."""
+    escala = (rubrica or {}).get("escala") or {}
+    try:
+        return max((int(k) for k in escala.keys()), default=3) or 3
+    except (TypeError, ValueError):
+        return 3
+
+
+def items_para_seccion(rubrica: dict, seccion: str) -> List[dict]:
+    """Ítems de la rúbrica que aplican a `seccion` (vía mapa_secciones)."""
+    mapa = (rubrica or {}).get("mapa_secciones") or {}
+    nums = mapa.get(seccion)
+    if nums is None:
+        from backend.config import _prefijo_num
+        pref = _prefijo_num(seccion)
+        if pref:
+            for k, v in mapa.items():
+                if _prefijo_num(k) == pref:
+                    nums = v
+                    break
+    if not nums:
+        return []
+    por_num = {it["numero"]: it for it in (rubrica or {}).get("items", [])}
+    return [por_num[n] for n in nums if n in por_num]
+
+
+def texto_criterio_rubrica(rubrica: dict, item_numero: int) -> str:
+    """Descripción del ítem `item_numero` en la rúbrica subida."""
+    for it in (rubrica or {}).get("items", []):
+        if it.get("numero") == item_numero:
+            return it.get("descripcion", "")
+    return ""
+
+
+def tabla_items_markdown(items: List[dict], escala_max: int = 3) -> str:
+    """Tabla markdown de ítems (de una sección) para inyectar en el prompt."""
+    lineas = [
+        f"| N° | Ítem de la Rúbrica | Puntaje (0-{escala_max}) |",
+        "|----|--------------------|--------------|",
+    ]
+    for it in items:
+        lineas.append(f"| {it['numero']:02d} | {it.get('descripcion', '')} | ___ |")
+    return "\n".join(lineas)
