@@ -60,10 +60,10 @@
 
 @layer utilities {
   .glass {
-    @apply bg-white/70 backdrop-blur-xl border border-white/60 shadow-[0_8px_30px_rgba(0,0,0,0.06)];
+    @apply bg-white/80 backdrop-blur-md border border-white/60 shadow-[0_8px_30px_rgba(0,0,0,0.06)];
   }
   .dark .glass {
-    @apply bg-zinc-900/60 border-white/10 shadow-[0_8px_30px_rgba(0,0,0,0.35)];
+    @apply bg-zinc-900/70 backdrop-blur-md border-white/10 shadow-[0_8px_30px_rgba(0,0,0,0.35)];
   }
   .hairline {
     box-shadow: 0 0 0 0.5px rgba(60, 60, 67, 0.22);

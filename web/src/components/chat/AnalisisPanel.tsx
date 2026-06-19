@@ -344,7 +344,10 @@ function TabDebate({ d }: { d: AnalisisDetalle }) {
       ) : (
         <Tarjeta titulo="Panel de debate">
           <p className="text-sm text-muted-foreground">
-            No se realizaron sesiones de debate en esta evaluación.
+            No se realizaron sesiones de debate en esta evaluación. El panel de 4 subagentes solo se
+            convoca cuando el auditor detecta <span className="font-medium text-foreground">errores de
+            rúbrica</span> que consolidar o cuestionar. Aquí no se marcaron errores (la sección cumple
+            los ítems evaluados), así que la red se ahorró esas llamadas.
           </p>
         </Tarjeta>
       )}
@@ -524,6 +527,12 @@ function TabMetricas({ d }: { d: AnalisisDetalle }) {
             antes y después (para el Gain Score), no en cada iteración.
           </p>
           <p className="text-sm tabular-nums">{trayectoria.join("  →  ")}</p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            La red conserva la <span className="font-medium text-foreground">mejor</span> versión: si una
+            reescritura puntúa más bajo, se descarta y se mantiene la anterior. Por eso tu nota final puede
+            ser mayor que el último valor de esta secuencia — no es un error: significa que tu texto ya era
+            el mejor y las reescrituras no lo superaron.
+          </p>
         </Tarjeta>
       )}
 

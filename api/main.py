@@ -120,8 +120,13 @@ async def subir_documento(
 
     existente = registry.buscar_documento_por_hash(user_id, pdf_hash)
     if existente:
-        # Ya está en memoria del proceso (mismo instante): conserva su estado,
-        # pero refresca el snapshot de rúbrica/perfil por si cambió en la sesión.
+        # El vector store se reutiliza (mismo PDF ya indexado → no re-vectorizar),
+        # PERO el estado de evaluación es POR CHAT: se reemplaza con la memoria de
+        # ESTE chat (vacía si es nuevo) para no arrastrar lo evaluado en otra
+        # conversación con el mismo proyecto.
+        mejoras.reset_memoria(existente)
+        if memoria_dict:
+            mejoras.restaurar_memoria(existente, memoria_dict)
         _aplicar_recursos_sesion(existente, rubrica_dict, perfil_dict)
         return _documento_a_json(existente, ya_indexado=True)
 
