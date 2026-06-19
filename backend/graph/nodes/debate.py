@@ -53,6 +53,8 @@ Eres un evaluador institucional especializado en la rúbrica oficial UPAO.
 Analiza si los errores identificados por el auditor son válidos según los criterios formales de la rúbrica.
 Basa tu argumento exclusivamente en los ítems de la rúbrica y las normas institucionales.
 
+{enfoque}
+
 CONTEXTO DEL DEBATE:
 - Sección evaluada: {seccion}
 - Errores bajo debate (ítems): {errores_rubrica}
@@ -72,6 +74,8 @@ Estás participando en un debate estructurado sobre errores detectados en una te
 
 El evaluador formal ya emitió su postura. DEBES responder directamente a su argumento
 antes de agregar tu análisis propio. No puedes ignorar lo que dijo.
+
+{enfoque}
 
 CONTEXTO DEL DEBATE:
 - Sección evaluada: {seccion}
@@ -103,6 +107,8 @@ en universidades peruanas. Estás participando en un debate estructurado.
 
 Los evaluadores formal y metodológico ya emitieron sus posturas y pueden haber
 discrepado entre sí. DEBES tomar posición respecto a ambos antes de dar la tuya.
+
+{enfoque}
 
 CONTEXTO DEL DEBATE:
 - Sección evaluada: {seccion}
@@ -136,6 +142,8 @@ _PROMPT_SINTETIZADOR = """\
 Eres el árbitro final de un debate entre tres evaluadores especializados.
 Tu rol no es evaluar la tesis — es resolver el debate analizando los argumentos
 y contrargumentos que se dieron, y aplicar la regla de mayoría informada.
+
+{enfoque}
 
 CONTEXTO DEL DEBATE:
 - Sección evaluada: {seccion}
@@ -209,11 +217,13 @@ def make_nodo_debate(llm_auditor: ChatOpenAI, llm_metodologico: ChatOpenAI):
                 "debate_memory":     [],
             }
 
+        from backend.enfoque import bloque_enfoque
         inputs_base = {
             "seccion":                    seccion,
             "errores_rubrica":            _formatear_errores(errores),
             "feedback_auditor":           state.get("feedback_auditor", ""),
             "observaciones_metodologicas": state.get("observaciones_metodologicas", ""),
+            "enfoque":                    bloque_enfoque(state.get("tipo_investigacion"), state.get("diseno")),
         }
 
         debate_memory: list = []

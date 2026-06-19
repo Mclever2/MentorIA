@@ -53,11 +53,23 @@ Compara el texto con las secciones relacionadas disponibles:
 - ¿El diseño metodológico es adecuado para el tipo de hipótesis planteada?
 - ¿Los instrumentos son coherentes con las variables a medir?
 
+### 2.b Coherencia TIPO ↔ CONTENIDO (crítico)
+¿El tipo y diseño DECLARADOS coinciden con lo que el proyecto realmente hace?
+- Si declara un tipo pero mezcla elementos de otro (p. ej. dice CUANTITATIVA pero tiene hipótesis
+  o categorías cualitativas → en realidad sería MIXTA), o usa una 2.ª variable/variable implícita
+  cuando declaró una sola: **dilo explícitamente** y recomienda DOS caminos — (a) alinear el
+  tipo/diseño a lo que realmente hace, o (b) ajustar ese elemento para cumplir con el tipo declarado.
+- Si la rúbrica exige algo que el tipo no requiere: no lo trates como error del tipo, pero avisa que
+  la rúbrica sí lo evalúa y recomienda cubrirlo o justificar su ausencia.
+
 ### 3. Viabilidad metodológica
 ¿La investigación propuesta es realizable con los recursos y tiempo indicados?
 
-### 4. Rigor científico
+### 4. Rigor científico (fundamenta, no alucines)
 ¿Las afirmaciones están sustentadas? ¿Se usan correctamente los conceptos metodológicos?
+**Fundamenta cada observación en los libros del CONTEXTO TEÓRICO** cuando apliquen (refiere el
+criterio/autor que respalda tu juicio o tu refutación). Si la biblioteca no cubre el punto, razona
+con criterio metodológico estándar, pero NO inventes citas, autores ni datos.
 
 ---
 

@@ -1,18 +1,20 @@
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { motion } from "framer-motion";
-import { ChartNoAxesColumn, GraduationCap } from "lucide-react";
+import { Award, ChartNoAxesColumn, GraduationCap } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { AccionMensaje, AnalisisDetalle, Mensaje } from "@/types";
+import type { AccionMensaje, AnalisisDetalle, Mensaje, RevisionCompleta } from "@/types";
 import EstructuraCards from "./EstructuraCards";
 
 interface MessageBubbleProps {
   mensaje: Mensaje;
   onVerAnalisis?: (detalle: AnalisisDetalle) => void;
+  onVerRevision?: (revision: RevisionCompleta) => void;
   onAccion?: (mensajeId: string, flags: AccionMensaje["flags"]) => void;
 }
 
-export default function MessageBubble({ mensaje, onVerAnalisis, onAccion }: MessageBubbleProps) {
+export default function MessageBubble({ mensaje, onVerAnalisis, onVerRevision, onAccion }: MessageBubbleProps) {
   if (mensaje.tipo === "estructura" && mensaje.estructura) {
     return (
       <div className="w-full">
@@ -28,7 +30,7 @@ export default function MessageBubble({ mensaje, onVerAnalisis, onAccion }: Mess
         animate={{ opacity: 1, y: 0 }}
         className="flex justify-end"
       >
-        <div className="max-w-[78%] rounded-3xl rounded-br-lg bg-primary text-primary-foreground px-5 py-3 text-[15px] leading-relaxed whitespace-pre-wrap">
+        <div className="max-w-[78%] rounded-3xl rounded-br-lg bg-primary text-primary-foreground px-5 py-3 text-[15px] leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
           {mensaje.contenido}
         </div>
       </motion.div>
@@ -46,8 +48,23 @@ export default function MessageBubble({ mensaje, onVerAnalisis, onAccion }: Mess
       </div>
       <div className="max-w-[85%] glass rounded-3xl rounded-tl-lg px-5 py-4 text-[15px]">
         <div className="prose-informe">
-          <ReactMarkdown>{mensaje.contenido}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{mensaje.contenido}</ReactMarkdown>
         </div>
+
+        {mensaje.revision && onVerRevision && (
+          <div className="mt-3 pt-3 border-t border-border/60">
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => onVerRevision(mensaje.revision!)}
+              className="rounded-full text-xs h-8 gap-1.5"
+            >
+              <Award className="w-3.5 h-3.5" />
+              Ver calificación completa — {mensaje.revision.calificacion.puntaje}/
+              {mensaje.revision.calificacion.maximo} pts
+            </Button>
+          </div>
+        )}
 
         {mensaje.detalles && mensaje.detalles.length > 0 && onVerAnalisis && (
           <div className="mt-3 pt-3 border-t border-border/60 flex flex-wrap gap-2">

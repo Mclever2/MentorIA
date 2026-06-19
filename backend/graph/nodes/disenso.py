@@ -61,6 +61,7 @@ def make_nodo_disenso(llm: ChatOpenAI):
 
         texto_actual = state.get("texto_iterado") or state.get("contexto_recuperado", "")
 
+        from backend.enfoque import bloque_enfoque
         inputs_base = {
             "seccion":                     seccion,
             "numero_iteracion":            n_iter,
@@ -72,6 +73,7 @@ def make_nodo_disenso(llm: ChatOpenAI):
             "resultado_consenso":          state.get("resultado_consenso") or "",
             "universidad":                 universidad,
             "programa":                    programa,
+            "enfoque":                     bloque_enfoque(state.get("tipo_investigacion"), state.get("diseno")),
         }
 
         from backend.lora.lora_configs import get_loras_para_agente, TIPO_DISENSO
@@ -98,6 +100,7 @@ def make_nodo_disenso(llm: ChatOpenAI):
             prompt = ChatPromptTemplate.from_messages([
                 ("system", system_prompt),
                 ("human", (
+                    "{enfoque}\n\n"
                     "Analiza los conflictos entre el Auditor y el Metodólogo "
                     "en la evaluación de la sección '{seccion}'.\n\n"
                     "**ANÁLISIS DE CONFLICTOS PREVIO EN ESTE PANEL:**\n"

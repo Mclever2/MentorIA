@@ -23,10 +23,11 @@ def parse_rubrica_pdf(pdf_bytes: bytes) -> Optional[dict]:
             logger.warning("No se encontraron ítems en el PDF de rúbrica.")
             return None
 
+        from backend.config import ESCALA_MAX
         secciones   = _agrupar_por_seccion(items)
         escala      = _extraer_escala(texto)
         vigesimal   = _extraer_vigesimal(texto)
-        puntaje_max = len(items) * max(escala.keys(), default=3)
+        puntaje_max = len(items) * ESCALA_MAX
 
         logger.info(
             f"Rúbrica parseada: {len(items)} ítems, "
@@ -215,7 +216,7 @@ def rubrica_a_texto_prompt(rubrica: dict) -> str:
     """
     Convierte la rúbrica parseada a texto Markdown para inyectar en el prompt del Auditor.
     """
-    lineas = ["| N° | Ítem de la Rúbrica | Puntaje (0-3) |",
+    lineas = ["| N° | Ítem de la Rúbrica | Puntaje (0-5) |",
               "|----|---------------------|--------------|"]
     ultima_seccion = None
 
@@ -235,12 +236,10 @@ def rubrica_a_texto_prompt(rubrica: dict) -> str:
 # los usen sin que backend dependa de api.
 
 def escala_max_rubrica(rubrica: dict) -> int:
-    """Puntaje máximo por ítem según la escala de la rúbrica (default 3)."""
-    escala = (rubrica or {}).get("escala") or {}
-    try:
-        return max((int(k) for k in escala.keys()), default=3) or 3
-    except (TypeError, ValueError):
-        return 3
+    """Puntaje máximo por ítem. Forzado a la escala 0-ESCALA_MAX para que los
+    agentes califiquen con la misma granularidad en todas las rúbricas."""
+    from backend.config import ESCALA_MAX
+    return ESCALA_MAX
 
 
 def items_para_seccion(rubrica: dict, seccion: str) -> List[dict]:
@@ -269,7 +268,7 @@ def texto_criterio_rubrica(rubrica: dict, item_numero: int) -> str:
     return ""
 
 
-def tabla_items_markdown(items: List[dict], escala_max: int = 3) -> str:
+def tabla_items_markdown(items: List[dict], escala_max: int = 5) -> str:
     """Tabla markdown de ítems (de una sección) para inyectar en el prompt."""
     lineas = [
         f"| N° | Ítem de la Rúbrica | Puntaje (0-{escala_max}) |",

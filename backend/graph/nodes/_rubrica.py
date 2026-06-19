@@ -26,18 +26,19 @@ _CRITERIOS_GENERICOS = [
 
 
 def _generico() -> dict:
+    from backend.config import ESCALA_MAX
     items = [{"numero": i + 1, "descripcion": d} for i, d in enumerate(_CRITERIOS_GENERICOS)]
     return {
         "items":        items,
         "items_nums":   [it["numero"] for it in items],
         "criterios_str": "\n".join(f"- {d}" for d in _CRITERIOS_GENERICOS),
         "tabla_md": (
-            "| N° | Criterio general | Puntaje (0-3) |\n"
+            f"| N° | Criterio general | Puntaje (0-{ESCALA_MAX}) |\n"
             "|----|------------------|--------------|\n"
             + "\n".join(f"| {it['numero']:02d} | {it['descripcion']} | ___ |" for it in items)
         ),
-        "puntaje_max": len(items) * 3,
-        "escala_max": 3,
+        "puntaje_max": len(items) * ESCALA_MAX,
+        "escala_max": ESCALA_MAX,
         "fuente": "criterios generales (tu rúbrica no contempla esta sección)",
         "aplica": False,
     }
@@ -46,6 +47,34 @@ def _generico() -> dict:
 def criterios_para_seccion(state: MentoriaState, seccion: str) -> dict:
     """Resuelve los criterios aplicables a `seccion`. Ver docstring del módulo."""
     rubrica = state.get("rubrica_dinamica")
+
+    # NÚCLEO de coherencia: usa los ítems REALES de la rúbrica que cubren sus
+    # secciones (título, problema, objetivos, hipótesis, variables, tipo/diseño,
+    # población), precalculados en full_review. Evita los 3 criterios genéricos.
+    plan = state.get("nucleo_plan") or {}
+    if state.get("modo_nucleo") and plan.get("items"):
+        from backend.config import ESCALA_MAX
+        items = plan["items"]
+        esc = ESCALA_MAX
+        # Las IDs del juez son strings ('3.1'), así que NO uses tabla_items_markdown
+        # (formatea con :02d y reventaría). El puntaje del núcleo no se usa para nota
+        # (la nota real viene de la calificación); estos criterios solo GUÍAN al redactor.
+        tabla = [f"| N° | Ítem de la Rúbrica | Puntaje (0-{esc}) |",
+                 "|----|--------------------|--------------|"]
+        for it in items:
+            tabla.append(f"| {it.get('numero', '?')} | {it.get('descripcion', '')} | ___ |")
+        return {
+            "items":        items,
+            "items_nums":   [it["numero"] for it in items],
+            "criterios_str": "\n".join(
+                f"- {it.get('descripcion', '')}" for it in items
+            ),
+            "tabla_md":     "\n".join(tabla),
+            "puntaje_max":  len(items) * esc,
+            "escala_max":   esc,
+            "fuente":       "rúbrica del tipo — núcleo de coherencia",
+            "aplica":       True,
+        }
 
     if rubrica:
         from backend.rag.rubric_parser import (
@@ -79,6 +108,7 @@ def criterios_para_seccion(state: MentoriaState, seccion: str) -> dict:
         _buscar_items_seccion,
         RUBRICA_ITEMS_UPAO,
         get_puntaje_maximo_seccion,
+        ESCALA_MAX,
     )
     items_nums = _buscar_items_seccion(seccion)
     if not items_nums:
@@ -86,7 +116,7 @@ def criterios_para_seccion(state: MentoriaState, seccion: str) -> dict:
 
     items = [{"numero": n, "descripcion": RUBRICA_ITEMS_UPAO.get(n, "")} for n in items_nums]
     lineas = [
-        "| N° | Ítem de la Rúbrica UPAO | Puntaje (0-3) |",
+        f"| N° | Ítem de la Rúbrica UPAO | Puntaje (0-{ESCALA_MAX}) |",
         "|----|-----------------------------|--------------|",
     ]
     for it in items:
@@ -97,7 +127,7 @@ def criterios_para_seccion(state: MentoriaState, seccion: str) -> dict:
         "criterios_str": "\n".join(f"- Ítem {n}: {RUBRICA_ITEMS_UPAO.get(n, '')}" for n in items_nums),
         "tabla_md":     "\n".join(lineas),
         "puntaje_max":  get_puntaje_maximo_seccion(seccion),
-        "escala_max":   3,
+        "escala_max":   ESCALA_MAX,
         "fuente":       "rúbrica oficial UPAO (por ítems)",
         "aplica":       True,
     }

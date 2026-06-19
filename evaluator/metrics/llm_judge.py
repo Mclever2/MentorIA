@@ -1,5 +1,6 @@
 import os
 import logging
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 from concurrent.futures import ThreadPoolExecutor
 from pydantic import BaseModel, Field
@@ -7,6 +8,16 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 
 logger = logging.getLogger(__name__)
+
+# Rúbrica del juez según el tipo de investigación detectado.
+_RUBRICA_POR_TIPO = {
+    "cuantitativa": "rubrica.md",
+    "cualitativa":  "rubrica_cualitativa.md",
+    "mixta":        "rubrica_mixto.md",
+    "tecnologica":  "rubrica_tecnologico.md",
+    "innovacion":   "rubrica_innovacion.md",
+}
+_RAIZ_PROYECTO = Path(__file__).resolve().parents[2]
 
 class ItemRubricaEvaluado(BaseModel):
     item_id: str = Field(description="ID del ítem en la rúbrica (ej. '4.1', '2.3')")
@@ -21,23 +32,39 @@ class EvaluacionSeccion(BaseModel):
     puntaje_total: float = Field(description="Suma total de los puntajes obtenidos")
     puntaje_maximo: float = Field(description="Suma total de los puntajes máximos de los ítems seleccionados")
 
-def cargar_rubrica_metodologica() -> str:
-    """Lee el archivo rubrica.md de la carpeta del proyecto."""
-    for pos in ["rubrica.md", "../rubrica.md", "poc_langgraph_mentoria/rubrica.md"]:
+def cargar_rubrica_metodologica(tipo: Optional[str] = None) -> str:
+    """Lee la rúbrica del juez según el tipo de investigación.
+
+    cuantitativa→rubrica.md, cualitativa→rubrica_cualitativa.md, mixta→rubrica_mixto.md,
+    tecnologica→rubrica_tecnologico.md, innovacion→rubrica_innovacion.md.
+    Si no se encuentra la específica, cae a la cuantitativa.
+    """
+    try:
+        from backend.enfoque import normalizar_tipo
+        fname = _RUBRICA_POR_TIPO.get(normalizar_tipo(tipo), "rubrica.md")
+    except Exception:
+        fname = "rubrica.md"
+
+    candidatos = [str(_RAIZ_PROYECTO / fname), fname, os.path.join("..", fname),
+                  os.path.join("poc_langgraph_mentoria", fname)]
+    for pos in candidatos:
         if os.path.isfile(pos):
             with open(pos, "r", encoding="utf-8") as f:
                 return f.read()
-    
-    abs_path = r"c:\Users\Administrador\Downloads\langgraph-red\poc_langgraph_mentoria\rubrica.md"
-    if os.path.isfile(abs_path):
-        with open(abs_path, "r", encoding="utf-8") as f:
-            return f.read()
-            
+
+    if fname != "rubrica.md":
+        logger.warning(f"[juez] No se encontró {fname}; uso rubrica.md (cuantitativa).")
+        return cargar_rubrica_metodologica(None)
     return "Rúbrica metodológica no encontrada en el sistema."
 
 _PROMPT_JUEZ_LLM = """
 Eres un Juez Metodológico de tesis de Ingeniería (estilo G-Eval). Evaluador de alta precisión.
 Tu tarea es evaluar la calidad metodológica de la sección de tesis del estudiante utilizando los criterios de la RÚBRICA DE EVALUACIÓN DE CALIDAD METODOLÓGICA especializada adjunta.
+
+IMPORTANTE: esto es un PROYECTO/propuesta de tesis (estructura de plan), que AÚN NO tiene
+Resultados, Discusión ni Conclusiones. Evalúa el PLAN y la coherencia metodológica; NO exijas
+resultados, hallazgos ni conclusiones reales. Si un ítem habla de "resultados/contribución", evalúa
+que esté bien PLANIFICADO/previsto, no que ya exista.
 
 RÚBRICA DE EVALUACIÓN (SECCIONES APLICABLES):
 {rubrica}
@@ -101,99 +128,70 @@ def _ejecutar_un_juez(
         logger.warning(f"Juez LLM con modelo {model_name} y temp {temperature} falló: {exc}")
         return None
 
-def filtrar_rubrica_por_seccion(seccion_objetivo: str) -> str:
-    """Filtra rubrica.md para quedarse solo con las secciones aplicables a seccion_objetivo."""
-    rubrica_content = cargar_rubrica_metodologica()
+def _parsear_secciones_rubrica(rubrica_content: str) -> list[tuple[int, str, str]]:
+    """Devuelve [(num, titulo, cuerpo)] de la rúbrica, parseando sus encabezados."""
+    import re
+    detallada = rubrica_content
+    if "RÚBRICA DETALLADA POR SECCIÓN" in rubrica_content:
+        detallada = rubrica_content.split("**RÚBRICA DETALLADA POR SECCIÓN**", 1)[-1]
+    pattern = r'\*\*(\d+)\\?\.\s+([^*]+?)\*\*'
+    matches = list(re.finditer(pattern, detallada))
+    fin = re.search(r'\*\*ESCALA DE', detallada)
+    fin_idx = fin.start() if fin else len(detallada)
+    secciones = []
+    for i, m in enumerate(matches):
+        num = int(m.group(1))
+        titulo = m.group(2).strip()
+        start = m.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else fin_idx
+        secciones.append((num, titulo, detallada[start:end].strip()))
+    return secciones
+
+
+def filtrar_rubrica_por_seccion(seccion_objetivo: str, tipo: Optional[str] = None) -> str:
+    """Filtra la rúbrica (del tipo dado) a la(s) sección(es) aplicable(s) a seccion_objetivo.
+
+    Genérico: parsea los encabezados de la rúbrica cargada y empareja seccion_objetivo
+    con el mejor título por palabras clave (sirve para las 5 rúbricas, no solo la cuanti).
+    """
+    rubrica_content = cargar_rubrica_metodologica(tipo)
     if not rubrica_content or "Rúbrica metodológica no encontrada" in rubrica_content:
         return rubrica_content
 
-    import re
     from backend.config import _kw_seccion
 
-    MAP_SECCION_OBJETIVO_A_NUMEROS = {
-        "1. Título del proyecto":                    [1],
-        "1.1 Descripción y delimitación":            [2],
-        "1.1.2 Problema central (formulación)":      [2, 3],
-        "1.2 Objetivos (General y Específicos)":     [4],
-        "1.3 Importancia del estudio":               [5],
-        "1.4 Justificación del estudio":             [5],
-        "2.2 Investigaciones antecedentes":          [7],
-        "2.3 Base teórica (Variables)":              [7],
-        "2.4 Definición de términos básicos":        [7],
-        "3.1–3.2 Hipótesis":                         [8],
-        "3.3 Variables (Operacionalización)":        [9],
-        "3.4 Matriz de consistencia":                [10],
-        "4.1–4.3 Tipo, Método y Diseño":             [11, 12],
-        "4.4 Población y muestra":                   [13],
-        "4.5 Instrumentos de recolección de datos":  [14],
-        "4.6 Procedimiento de ejecución":            [14],
-        "4.7 Análisis de datos":                     [15],
-        "5. Aspectos administrativos":               [6],
-        "III. Referencias bibliográficas":           [7],
-    }
+    secciones = _parsear_secciones_rubrica(rubrica_content)
+    if not secciones:
+        return rubrica_content
 
-    numeros = None
-    direct = MAP_SECCION_OBJETIVO_A_NUMEROS.get(seccion_objetivo)
-    if direct:
-        numeros = direct
+    cuerpos: list[str] = []
+    if "vista general" in seccion_objetivo.lower():
+        cuerpos = [c for _, _, c in secciones]
     else:
-        m = re.match(r'^(\d[\d\.]*)', seccion_objetivo.strip())
-        prefijo_num = m.group(1).rstrip('.') if m else None
-        if prefijo_num:
-            for k, val in MAP_SECCION_OBJETIVO_A_NUMEROS.items():
-                m2 = re.match(r'^(\d[\d\.]*)', k.strip())
-                if m2 and m2.group(1).rstrip('.') == prefijo_num:
-                    numeros = val
-                    break
-        if not numeros:
-            kw = _kw_seccion(seccion_objetivo)
-            if kw:
-                mejor_jaccard = 0.0
-                for k, val in MAP_SECCION_OBJETIVO_A_NUMEROS.items():
-                    kw_k = _kw_seccion(k)
-                    inter = len(kw & kw_k)
-                    if inter == 0:
-                        continue
-                    union = len(kw | kw_k)
-                    jaccard = inter / union if union else 0.0
-                    if jaccard > mejor_jaccard:
-                        mejor_jaccard = jaccard
-                        numeros = val
+        kw = _kw_seccion(seccion_objetivo)
+        if kw:
+            mejor_j, mejor_cuerpo = 0.0, None
+            for _, titulo, cuerpo in secciones:
+                kw_t = _kw_seccion(titulo)
+                inter = len(kw & kw_t)
+                if not inter:
+                    continue
+                j = inter / len(kw | kw_t)
+                if j > mejor_j:
+                    mejor_j, mejor_cuerpo = j, cuerpo
+            if mejor_cuerpo:
+                cuerpos = [mejor_cuerpo]
 
-    if not numeros:
-        if "vista general" in seccion_objetivo.lower():
-            numeros = [1, 2, 3, 4, 8, 11, 12]
-        else:
-            return rubrica_content
+    if not cuerpos:
+        return rubrica_content  # sin match claro: usar la rúbrica completa
 
-    pattern = r'\*\*(\d+)\\\.\s+([^*]+)\*\*'
-    matches = list(re.finditer(pattern, rubrica_content))
-    
-    secciones_texto = {}
-    for i, match in enumerate(matches):
-        num = int(match.group(1))
-        start_idx = match.start()
-        if i + 1 < len(matches):
-            end_idx = matches[i + 1].start()
-        else:
-            escala_match = re.search(r'\*\*ESCALA DE', rubrica_content)
-            end_idx = escala_match.start() if escala_match else len(rubrica_content)
-        secciones_texto[num] = rubrica_content[start_idx:end_idx].strip()
+    cabecera = rubrica_content.split("**RÚBRICA DETALLADA POR SECCIÓN**")[0]
+    return cabecera + "\n\n**RÚBRICA DETALLADA (SECCIONES APLICABLES)**\n\n" + "\n\n".join(cuerpos)
 
-    partes = []
-    for n in sorted(numeros):
-        if n in secciones_texto:
-            partes.append(secciones_texto[n])
-
-    if partes:
-        cabecera = rubrica_content.split("**RÚBRICA DETALLADA POR SECCIÓN**")[0]
-        return cabecera + "\n\n**RÚBRICA DETALLADA (SECCIONES APLICABLES)**\n\n" + "\n\n".join(partes)
-    
-    return rubrica_content
-
-def evaluar_con_juez_llm(seccion_objetivo: str, texto: str, es_panel: bool = True) -> EvaluacionSeccion:
+def evaluar_con_juez_llm(seccion_objetivo: str, texto: str, es_panel: bool = True,
+                         tipo: Optional[str] = None) -> EvaluacionSeccion:
     """
-    Evalúa un texto con el Juez LLM (G-Eval).
+    Evalúa un texto con el Juez LLM (G-Eval) usando la rúbrica del TIPO de investigación.
     Si es_panel es True, usa un panel de hasta 3 configuraciones/modelos de LLM y calcula el consenso.
     """
     if not texto.strip():
@@ -203,8 +201,8 @@ def evaluar_con_juez_llm(seccion_objetivo: str, texto: str, es_panel: bool = Tru
             puntaje_total=0.0,
             puntaje_maximo=1.0
         )
-        
-    rubrica_content = filtrar_rubrica_por_seccion(seccion_objetivo)
+
+    rubrica_content = filtrar_rubrica_por_seccion(seccion_objetivo, tipo)
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     
     if not es_panel:
@@ -213,10 +211,13 @@ def evaluar_con_juez_llm(seccion_objetivo: str, texto: str, es_panel: bool = Tru
             return res
         raise ValueError("El Juez LLM único falló al evaluar el texto.")
 
+    # Jurado de 3 modelos distintos (≥3 para poder descartar al atípico vía
+    # consenso por medoide). Todos soportan salida estructurada nativa, así que
+    # no hay warning de json_schema. Temperaturas bajas → más reproducible.
     configuraciones = [
-        {"model": "gpt-4o-mini", "temp": 0.0},
-        {"model": "gpt-4o", "temp": 0.2},
-        {"model": "gpt-3.5-turbo", "temp": 0.1}
+        {"model": "gpt-4o-mini",  "temp": 0.0},
+        {"model": "gpt-4o",       "temp": 0.2},
+        {"model": "gpt-4.1-mini", "temp": 0.1},
     ]
     
     resultados: List[EvaluacionSeccion] = []

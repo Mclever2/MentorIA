@@ -36,6 +36,7 @@ def exportar_memoria(doc) -> dict:
         "evaluadas": sorted(doc.evaluadas),
         "aplicadas": {s: m["texto"] for s, m in doc.mejoras.items() if m.get("aplicada")},
         "pendientes": {s: m["texto"] for s, m in doc.mejoras.items() if not m.get("aplicada")},
+        "ultima_revision": doc.ultima_revision or {},
     }
 
 
@@ -47,6 +48,9 @@ def restaurar_memoria(doc, memoria: dict) -> None:
     """
     if not memoria:
         return
+
+    if memoria.get("ultima_revision"):
+        doc.ultima_revision = memoria["ultima_revision"]
 
     for s in memoria.get("evaluadas", []):
         doc.evaluadas.add(s)

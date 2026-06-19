@@ -1,10 +1,11 @@
 import type { DocumentoInfo, EventoRun } from "@/lib/api";
 
 export interface ItemRubrica {
-  item_numero: number;
+  item_numero: number | string;
   criterio?: string;
   puntaje?: number;
   puntaje_actual?: number;
+  maximo?: number;                 // máximo del ítem (juez por tipo, escala ponderada)
   observacion?: string;
   descripcion?: string;
 }
@@ -26,6 +27,7 @@ export interface AnalisisDetalle {
   puntaje?: number | null;
   puntaje_max?: number | null;
   puntaje_inicial?: number | null;
+  escala_max?: number;
   iteraciones?: number;
   max_iteraciones?: number;
   texto_mejorado?: string;
@@ -42,12 +44,38 @@ export interface AnalisisDetalle {
   contexto_cruzado?: string;
   contexto_teorico?: string;
   metricas?: Record<string, unknown>;
+  metricas_juez?: MetricaJuez | null;   // rúbrica del tipo (LLM-as-judge, /100)
 }
 
 export interface AccionMensaje {
   label: string;
   variante?: "primaria" | "secundaria";
   flags: { confirmar_reevaluacion?: boolean; decision_mejoras?: "aplicar" | "mantener" } | null;
+}
+
+// Calificación por ítem de la revisión completa.
+export interface RubricaItemEval {
+  numero: number | string;
+  descripcion: string;
+  secciones?: string[];
+  puntaje: number | null;          // null = no aplica por tipo
+  maximo: number;
+  estado: "ok" | "bajo" | "na" | "ausente";
+  razon?: string;
+}
+
+export interface RevisionCompleta {
+  calificacion: { puntaje: number; maximo: number; items: RubricaItemEval[] };
+  fortalezas?: string[];
+  debilidades?: string[];
+  trazabilidad?: { coherente: boolean; observaciones: string };
+}
+
+// Métrica complementaria: rúbrica del tipo evaluada por LLM-as-judge (escala /100).
+export interface MetricaJuez {
+  tipo: string;
+  fuente?: string;
+  calificacion: { puntaje: number; maximo: number; items: RubricaItemEval[] };
 }
 
 export interface Mensaje {
@@ -57,6 +85,7 @@ export interface Mensaje {
   tipo?: "texto" | "estructura";
   estructura?: Pick<DocumentoInfo, "nombre" | "stats" | "estructura_toc">;
   detalles?: AnalisisDetalle[];
+  revision?: RevisionCompleta;
   acciones?: AccionMensaje[];
 }
 
@@ -79,6 +108,8 @@ export interface RubricaPersist {
   mapa_secciones?: Record<string, number[]>;
   secciones?: Record<string, number[]>;
   escala?: Record<string, string>;
+  items_ausentes?: { numero: number; descripcion: string }[];
+  mapa_toc_firma?: string;
   total_items: number;
   puntaje_maximo: number;
 }

@@ -70,15 +70,25 @@ def make_nodo_metodologico(llm: ChatOpenAI):
         crit = criterios_para_seccion(state, seccion)
         criterios_str = crit["criterios_str"]
 
-        logger.info("[Metodólogo] Planificando contexto adicional con RAG dinámico…")
-        contexto_dinamico = obtener_contexto_dinamico(
-            llm              = llm,
-            seccion          = seccion,
-            texto_snippet    = texto_a_evaluar[:500],
-            rol              = "metodólogo experto en coherencia cruzada de tesis universitarias",
-            criterios        = criterios_str,
-            feedback_auditor = "",
-        )
+        from backend.enfoque import bloque_enfoque, especialista_metodologico
+        tipo_inv = state.get("tipo_investigacion")
+        enfoque = bloque_enfoque(tipo_inv, state.get("diseno"))
+
+        # Paquete de coherencia: reusa lo que ya planificó el auditor en esta
+        # iteración en vez de gastar otra llamada de planificación RAG.
+        contexto_dinamico = state.get("contexto_coherencia")
+        if contexto_dinamico:
+            logger.info("[Metodólogo] Reusando paquete de coherencia del auditor (sin RAG extra)")
+        else:
+            logger.info("[Metodólogo] Planificando contexto adicional con RAG dinámico…")
+            contexto_dinamico = obtener_contexto_dinamico(
+                llm              = llm,
+                seccion          = seccion,
+                texto_snippet    = texto_a_evaluar[:500],
+                rol              = "metodólogo experto en coherencia cruzada de tesis universitarias",
+                criterios        = criterios_str,
+                feedback_auditor = "",
+            )
 
         inputs_base = {
             "seccion":                  seccion,
@@ -92,6 +102,7 @@ def make_nodo_metodologico(llm: ChatOpenAI):
             "rubrica_institucional_drive":       "",
             "contexto_biblioteca_disponible":    "",
             "contexto_secciones_relacionadas":   "",
+            "enfoque":                           enfoque,
         }
 
         from backend.lora.lora_configs import get_loras_para_agente, TIPO_METODOLOGO
@@ -101,6 +112,11 @@ def make_nodo_metodologico(llm: ChatOpenAI):
             TIPO_METODOLOGO, universidad, programa,
             perfil_override=state.get("perfil_institucional"),
         )
+
+        # Híbrido: el 1er subagente (rigor) se especializa según el tipo de
+        # investigación detectado; el 2do (coherencia) valida la trazabilidad.
+        if loras:
+            loras[0].prompt_modificador = especialista_metodologico(tipo_inv)
 
         sub_items = []
 
@@ -118,8 +134,12 @@ def make_nodo_metodologico(llm: ChatOpenAI):
             prompt = ChatPromptTemplate.from_messages([
                 ("system", system_prompt),
                 ("human", (
+                    "{enfoque}\n\n"
                     "Evalúa el rigor metodológico de la sección '{seccion}' "
-                    "(iteración {numero_iteracion}).\n\n"
+                    "(iteración {numero_iteracion}). Verifica la TRAZABILIDAD: que el tipo y el "
+                    "diseño declarados concuerden entre sí y con el contenido; señala incongruencias "
+                    "(p. ej. hipótesis estadísticas en un estudio cualitativo, u operacionalización "
+                    "donde no corresponde) y adecúa tus recomendaciones al enfoque.\n\n"
                     "**PERSPECTIVAS DE EVALUADORES ANTERIORES DEL PANEL:**\n"
                     "{historial_panel}\n\n"
                     "{contexto_biblioteca_disponible}\n\n"
