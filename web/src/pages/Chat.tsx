@@ -82,7 +82,7 @@ export default function Chat({ session }: { session: Session | null }) {
   const [archivoPendiente, setArchivoPendiente] = useState<File | null>(null);
   const [ejecutando, setEjecutando] = useState(false);
   const [pasos, setPasos] = useState<PasoProgreso[]>([]);
-  const [iteraciones, setIteraciones] = useState(2);
+  const [iteraciones, setIteraciones] = useState(1);
   const [analisis, setAnalisis] = useState<AnalisisDetalle | null>(null);
   const [revPanel, setRevPanel] = useState<RevisionCompleta | null>(null);
 

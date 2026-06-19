@@ -40,6 +40,19 @@ def exportar_memoria(doc) -> dict:
     }
 
 
+def reset_memoria(doc) -> None:
+    """Limpia el estado de evaluación POR CHAT (evaluadas / mejoras / última revisión).
+
+    El vector store del PDF se reutiliza entre chats con el mismo proyecto (no
+    re-indexar), pero QUÉ secciones se evaluaron y sus correcciones son propios de
+    cada conversación. Se llama antes de restaurar la memoria del chat que sube el
+    PDF, para no arrastrar lo evaluado en otra conversación.
+    """
+    doc.evaluadas = set()
+    doc.mejoras = {}
+    doc.ultima_revision = {}
+
+
 def restaurar_memoria(doc, memoria: dict) -> None:
     """
     Reconstruye la memoria del hilo tras re-indexar el PDF (rehidratación).
