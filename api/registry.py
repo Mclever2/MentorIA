@@ -28,9 +28,17 @@ class DocumentoActivo:
     stats: list
     rubrica: Optional[dict] = None
     rubrica_nombre: Optional[str] = None
+    universidad: Optional[str] = None
+    programa: Optional[str] = None
+    perfil_institucional: Optional[str] = None
+    tipo_investigacion: Optional[str] = None
+    diseno: Optional[str] = None
     creado_en: float = field(default_factory=time.time)
     evaluadas: set = field(default_factory=set)
     mejoras: dict = field(default_factory=dict)
+    # Resumen compacto de la última revisión (completa o por secciones), para que el
+    # agente de chat rápido no pierda el hilo. {"tipo","texto"}.
+    ultima_revision: dict = field(default_factory=dict)
 
 
 @dataclass

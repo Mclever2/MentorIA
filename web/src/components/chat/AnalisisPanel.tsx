@@ -1,15 +1,26 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { motion } from "framer-motion";
 import {
+  AlertTriangle,
   ArrowLeft,
   BookOpen,
   ClipboardCheck,
   FileText,
   Gauge,
+  Globe,
+  Handshake,
+  Landmark,
+  Lightbulb,
   Link2,
+  type LucideIcon,
+  MessageCircle,
+  Microscope,
   Scale,
   Sparkles,
+  TrendingUp,
+  Zap,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -146,7 +157,7 @@ function Tarjeta({
 function Md({ texto }: { texto: string }) {
   return (
     <div className="prose-informe text-[14px]">
-      <ReactMarkdown>{texto}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{texto}</ReactMarkdown>
     </div>
   );
 }
@@ -157,12 +168,13 @@ function TabEvaluacion({ d }: { d: AnalisisDetalle }) {
     <>
       {d.texto_mejorado ? (
         <Tarjeta icono={<Sparkles className="w-4 h-4 text-primary" />} titulo="Texto final propuesto por el Redactor">
-          <pre className="whitespace-pre-wrap text-[13.5px] leading-relaxed font-sans bg-muted/60 rounded-2xl p-4 max-h-[28rem] overflow-y-auto">
-            {d.texto_mejorado}
-          </pre>
+          <div className="bg-muted/60 rounded-2xl p-4 max-h-[28rem] overflow-y-auto">
+            <Md texto={d.texto_mejorado} />
+          </div>
           {d.texto_mejorado.includes("[COMPLETAR:") && (
-            <p className="mt-2 text-xs text-[#FF9500]">
-              ⚠️ El texto contiene marcas «[COMPLETAR: …]» que debes rellenar con contenido real.
+            <p className="mt-2 text-xs text-[#FF9500] flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              El texto contiene marcas «[COMPLETAR: …]» que debes rellenar con contenido real.
             </p>
           )}
         </Tarjeta>
@@ -175,7 +187,10 @@ function TabEvaluacion({ d }: { d: AnalisisDetalle }) {
       )}
 
       {d.sugerencias_redactor && (
-        <Tarjeta titulo="💡 Recomendaciones de pulido (Redactor)">
+        <Tarjeta
+          icono={<Lightbulb className="w-4 h-4 text-primary" />}
+          titulo="Recomendaciones del Redactor (no se califican)"
+        >
           <Md texto={d.sugerencias_redactor} />
         </Tarjeta>
       )}
@@ -196,10 +211,12 @@ function TabEvaluacion({ d }: { d: AnalisisDetalle }) {
 }
 
 
-function FilaItem({ item, antes }: { item: ItemRubrica; antes?: ItemRubrica }) {
+function FilaItem({ item, antes, escala }: { item: ItemRubrica; antes?: ItemRubrica; escala: number }) {
   const pts = item.puntaje ?? 0;
   const ptsAntes = antes?.puntaje;
-  const color = pts >= 3 ? "text-[#34C759]" : pts >= 2 ? "text-[#FF9500]" : "text-destructive";
+  const max = item.maximo ?? escala;          // escala ponderada por ítem (juez /100) o 0-5
+  const ratio = max > 0 ? pts / max : 0;
+  const color = ratio >= 0.8 ? "text-[#34C759]" : ratio >= 0.5 ? "text-[#FF9500]" : "text-destructive";
   return (
     <li className="py-2.5 border-b border-border/60 last:border-0">
       <div className="flex items-start gap-3">
@@ -209,14 +226,19 @@ function FilaItem({ item, antes }: { item: ItemRubrica; antes?: ItemRubrica }) {
         <div className="min-w-0 flex-1">
           <p className="text-[13px] leading-snug">{item.criterio || item.descripcion}</p>
           {item.observacion && (
-            <p className="mt-1 text-xs text-muted-foreground leading-snug">{item.observacion}</p>
+            <p className="mt-1 text-xs text-muted-foreground leading-snug">
+              {ratio < 1 && (
+                <span className="font-medium text-[#FF9500]">Para el máximo: </span>
+              )}
+              {item.observacion}
+            </p>
           )}
         </div>
         <div className="shrink-0 text-right tabular-nums text-sm">
           {ptsAntes != null && (
             <span className="text-muted-foreground line-through mr-1.5">{ptsAntes}</span>
           )}
-          <span className={cn("font-semibold", color)}>{pts}/3</span>
+          <span className={cn("font-semibold", color)}>{pts}/{max}</span>
         </div>
       </div>
     </li>
@@ -228,22 +250,23 @@ function TabRubrica({ d }: { d: AnalisisDetalle }) {
   const final = d.evaluacion_final ?? [];
   const antesPorItem = new Map(inicial.map((i) => [i.item_numero, i]));
   const errores = d.errores_rubrica ?? [];
+  const escala = d.escala_max ?? 5;
 
   return (
     <>
       {final.length > 0 ? (
-        <Tarjeta titulo="Rúbrica UPAO — texto final (tachado: puntaje del texto original)">
+        <Tarjeta titulo="Rúbrica — texto final (tachado: puntaje del texto original)">
           <ul>
             {final.map((it) => (
-              <FilaItem key={it.item_numero} item={it} antes={antesPorItem.get(it.item_numero)} />
+              <FilaItem key={it.item_numero} item={it} antes={antesPorItem.get(it.item_numero)} escala={escala} />
             ))}
           </ul>
         </Tarjeta>
       ) : inicial.length > 0 ? (
-        <Tarjeta titulo="Rúbrica UPAO — evaluación del texto original">
+        <Tarjeta titulo="Rúbrica — evaluación del texto original">
           <ul>
             {inicial.map((it) => (
-              <FilaItem key={it.item_numero} item={it} />
+              <FilaItem key={it.item_numero} item={it} escala={escala} />
             ))}
           </ul>
         </Tarjeta>
@@ -274,11 +297,11 @@ function TabRubrica({ d }: { d: AnalisisDetalle }) {
 }
 
 
-const ICONO_SUBAGENTE: Record<string, string> = {
-  perspectiva_formal: "🏛️",
-  perspectiva_metodologica: "🔬",
-  perspectiva_contextual: "🌎",
-  sintetizador_debate: "⚖️",
+const ICONO_SUBAGENTE: Record<string, LucideIcon> = {
+  perspectiva_formal: Landmark,
+  perspectiva_metodologica: Microscope,
+  perspectiva_contextual: Globe,
+  sintetizador_debate: Scale,
 };
 
 function Sesion({ s, idx }: { s: SesionDebate; idx: number }) {
@@ -295,15 +318,18 @@ function Sesion({ s, idx }: { s: SesionDebate; idx: number }) {
       </p>
       {v.justificacion && <p className="text-[13px] mb-3 italic">{v.justificacion}</p>}
       <div className="space-y-3">
-        {s.panel.map((p, i) => (
-          <div key={i} className="bg-muted/60 rounded-2xl p-3.5">
-            <p className="text-[13px] font-semibold mb-1">
-              {ICONO_SUBAGENTE[p.subagente] ?? "💬"}{" "}
-              {p.subagente.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-            </p>
-            <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{p.contenido}</p>
-          </div>
-        ))}
+        {s.panel.map((p, i) => {
+          const IconoSub = ICONO_SUBAGENTE[p.subagente] ?? MessageCircle;
+          return (
+            <div key={i} className="bg-muted/60 rounded-2xl p-3.5">
+              <p className="text-[13px] font-semibold mb-1 flex items-center gap-1.5">
+                <IconoSub className="w-3.5 h-3.5 text-primary shrink-0" />
+                {p.subagente.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+              </p>
+              <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{p.contenido}</p>
+            </div>
+          );
+        })}
       </div>
     </Tarjeta>
   );
@@ -324,10 +350,10 @@ function TabDebate({ d }: { d: AnalisisDetalle }) {
       )}
 
       <div className="grid sm:grid-cols-2 gap-5">
-        <Tarjeta titulo="🤝 Consenso">
+        <Tarjeta icono={<Handshake className="w-4 h-4 text-primary" />} titulo="Consenso">
           {d.consenso ? <Md texto={d.consenso} /> : <p className="text-sm text-muted-foreground">Sin análisis de consenso.</p>}
         </Tarjeta>
-        <Tarjeta titulo="⚡ Disenso">
+        <Tarjeta icono={<Zap className="w-4 h-4 text-primary" />} titulo="Disenso">
           {d.disenso ? <Md texto={d.disenso} /> : <p className="text-sm text-muted-foreground">Sin análisis de disenso.</p>}
         </Tarjeta>
       </div>
@@ -414,15 +440,15 @@ function Metrica({ nombre, valor, ayuda }: { nombre: string; valor: string; ayud
 }
 
 function TabMetricas({ d }: { d: AnalisisDetalle }) {
+  const juez = d.metricas_juez;
   const m = (d.metricas ?? {}) as Record<string, any>;
   const hayMetricas = Object.keys(m).length > 0;
 
-  if (!hayMetricas) {
+  if (!juez?.calificacion?.items?.length && !hayMetricas) {
     return (
       <Tarjeta icono={<Gauge className="w-4 h-4 text-primary" />} titulo="Métricas de proceso y calidad">
         <p className="text-sm text-muted-foreground">
-          Las métricas NLP no están disponibles para esta sesión (se generan en el
-          nodo Exportador al finalizar el ciclo).
+          Las métricas no están disponibles para esta sesión.
         </p>
       </Tarjeta>
     );
@@ -433,6 +459,38 @@ function TabMetricas({ d }: { d: AnalisisDetalle }) {
 
   return (
     <>
+      {juez?.calificacion?.items?.length ? (
+        <Tarjeta
+          icono={<Gauge className="w-4 h-4 text-primary" />}
+          titulo={`Métrica LLM-as-judge — rúbrica ${juez.tipo} (${juez.calificacion.puntaje}/${juez.calificacion.maximo})`}
+        >
+          <p className="text-xs text-muted-foreground mb-3">
+            Evaluación independiente con la rúbrica de tu tipo de investigación (escala /100).
+            Segunda mirada complementaria; no es tu calificación oficial.
+          </p>
+          <ul>
+            {juez.calificacion.items.map((it, i) => (
+              <li key={`mj-${i}`} className="py-2.5 border-b border-border/60 last:border-0">
+                <div className="flex items-start gap-3">
+                  <span className="shrink-0 text-xs font-semibold bg-muted rounded-xl px-2 py-1">
+                    {it.numero}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px]">{it.descripcion}</p>
+                    {it.razon && <p className="mt-1 text-xs text-muted-foreground">{it.razon}</p>}
+                  </div>
+                  <span className="shrink-0 text-sm font-semibold tabular-nums">
+                    {it.puntaje ?? "—"}/{it.maximo}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Tarjeta>
+      ) : null}
+
+      {hayMetricas && (
+      <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Metrica
           nombre="LLM-as-Judge (G-Eval)"
@@ -457,13 +515,25 @@ function TabMetricas({ d }: { d: AnalisisDetalle }) {
       </div>
 
       {m.iterative_consistency_has_iter && trayectoria.length > 0 && (
-        <Tarjeta titulo="📈 Iterative Consistency (trayectoria del juez externo)">
+        <Tarjeta
+          icono={<TrendingUp className="w-4 h-4 text-primary" />}
+          titulo="Trayectoria de la rúbrica por iteración (red multiagente)"
+        >
+          <p className="text-xs text-muted-foreground mb-2">
+            Nota de tu rúbrica en cada iteración de la red. El juez LLM (G-Eval) solo se evalúa
+            antes y después (para el Gain Score), no en cada iteración.
+          </p>
           <p className="text-sm tabular-nums">{trayectoria.join("  →  ")}</p>
         </Tarjeta>
       )}
 
       {items.length > 0 && (
         <Tarjeta titulo="Evaluación detallada del Juez LLM (G-Eval)">
+          <p className="text-xs text-muted-foreground mb-3">
+            Juez externo independiente (rúbrica de tu tipo de investigación), complementario y solo
+            antes/después. Tu calificación oficial por ítem, con lo que falta para el máximo, está en
+            la pestaña <span className="font-medium text-foreground">Rúbrica</span>.
+          </p>
           {Array.isArray(m.llm_judge_secciones) && m.llm_judge_secciones.length > 0 && (
             <p className="text-xs text-muted-foreground mb-3">
               Secciones de la rúbrica seleccionadas: {m.llm_judge_secciones.join(", ")}
@@ -490,6 +560,8 @@ function TabMetricas({ d }: { d: AnalisisDetalle }) {
             ))}
           </ul>
         </Tarjeta>
+      )}
+      </>
       )}
     </>
   );

@@ -5,18 +5,25 @@ import { motion } from "framer-motion";
 import { BookOpenCheck, FileSearch, Layers, ListChecks, Loader2 } from "lucide-react";
 
 import AnalisisPanel from "@/components/chat/AnalisisPanel";
+import RevisionCompletaPanel from "@/components/chat/RevisionCompletaPanel";
 import ChatInput from "@/components/chat/ChatInput";
 import FondoLiquido from "@/components/chat/FondoLiquido";
 import MessageBubble from "@/components/chat/MessageBubble";
+import PerfilModal from "@/components/chat/PerfilModal";
 import ProgressTimeline from "@/components/chat/ProgressTimeline";
+import RecursosPanel from "@/components/chat/RecursosPanel";
+import RubricaTabla from "@/components/chat/RubricaTabla";
 import Sidebar from "@/components/chat/Sidebar";
 import UploadZone from "@/components/chat/UploadZone";
 import { Button } from "@/components/ui/button";
 import {
+  buscarUniversidad,
   cancelarRun,
   enviarChat,
+  setRecursosDoc,
   streamRun,
   subirDocumento,
+  subirReglamento,
   subirRubrica,
   type ChatFlags,
   type DocMemoria,
@@ -33,8 +40,24 @@ import {
   rehidratar,
   type DocPersistido,
 } from "@/lib/sesion";
+import {
+  guardarPreferencias,
+  guardarRecursosConversacion,
+  leerPreferencias,
+  leerRecursosConversacion,
+  recursosVacios,
+} from "@/lib/recursos";
 import { supabase } from "@/lib/supabase";
-import type { AccionMensaje, AnalisisDetalle, Conversacion, Mensaje, PasoProgreso } from "@/types";
+import type {
+  AccionMensaje,
+  AnalisisDetalle,
+  Conversacion,
+  Mensaje,
+  PasoProgreso,
+  PerfilUniversidad,
+  RevisionCompleta,
+  RubricaPersist,
+} from "@/types";
 
 let _id = 0;
 const nuevoId = () => `m${Date.now()}_${_id++}`;
@@ -61,6 +84,19 @@ export default function Chat({ session }: { session: Session | null }) {
   const [pasos, setPasos] = useState<PasoProgreso[]>([]);
   const [iteraciones, setIteraciones] = useState(2);
   const [analisis, setAnalisis] = useState<AnalisisDetalle | null>(null);
+  const [revPanel, setRevPanel] = useState<RevisionCompleta | null>(null);
+
+  // Rúbrica + perfil de universidad (snapshot por chat, default del usuario)
+  const [rubrica, setRubrica] = useState<RubricaPersist | null>(null);
+  const [perfil, setPerfil] = useState<PerfilUniversidad | null>(null);
+  const [cargandoRubrica, setCargandoRubrica] = useState(false);
+  const [cargandoPerfil, setCargandoPerfil] = useState(false);
+  const [estadoRubrica, setEstadoRubrica] = useState("");
+  const [estadoPerfil, setEstadoPerfil] = useState("");
+  const [verRubrica, setVerRubrica] = useState(false);
+  const [verPerfil, setVerPerfil] = useState(false);
+  // Hay proyecto cargado o persistido (rehidratable) → habilita subir rúbrica.
+  const [proyectoDisponible, setProyectoDisponible] = useState(false);
 
   const runIdRef = useRef<string | null>(null);
   const pendienteRef = useRef<{ texto: string; flags: ChatFlags } | null>(null);
@@ -70,6 +106,12 @@ export default function Chat({ session }: { session: Session | null }) {
   const docMemoriaRef = useRef<DocMemoria>(memoriaVacia());
   const mensajesRef = useRef<Mensaje[]>([]);
   mensajesRef.current = mensajes;
+  // Refs sincronizados para closures asíncronos + default del usuario
+  const rubricaRef = useRef<RubricaPersist | null>(null);
+  const perfilRef = useRef<PerfilUniversidad | null>(null);
+  rubricaRef.current = rubrica;
+  perfilRef.current = perfil;
+  const preferenciasRef = useRef(recursosVacios());
 
   const userId = session?.user.id ?? null;
 
@@ -87,6 +129,19 @@ export default function Chat({ session }: { session: Session | null }) {
     cargarConversaciones();
   }, [cargarConversaciones]);
 
+  // Default del usuario (rúbrica + perfil) que heredan los chats nuevos.
+  useEffect(() => {
+    if (!session) return;
+    leerPreferencias().then((p) => {
+      preferenciasRef.current = p;
+      if (!convActiva) {
+        setRubrica(p.rubrica);
+        setPerfil(p.perfil);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [mensajes, pasos]);
@@ -102,6 +157,11 @@ export default function Chat({ session }: { session: Session | null }) {
       .single();
     if (error || !data) return null;
     setConvActiva(data.id);
+    // Congela en el chat la rúbrica/perfil activos al momento de crearlo.
+    guardarRecursosConversacion(data.id, {
+      rubrica: rubricaRef.current,
+      perfil: perfilRef.current,
+    });
     cargarConversaciones();
     return data.id;
   }
@@ -111,6 +171,7 @@ export default function Chat({ session }: { session: Session | null }) {
     const metadata: Record<string, unknown> = {};
     if (m.estructura) metadata.estructura = m.estructura;
     if (m.detalles?.length) metadata.detalles = m.detalles;
+    if (m.revision) metadata.revision = m.revision;
     await supabase.from("mensajes").insert({
       conversacion_id: convId,
       rol: m.rol,
@@ -124,6 +185,7 @@ export default function Chat({ session }: { session: Session | null }) {
     if (!supabase || ejecutando) return;
     setConvActiva(id);
     setAnalisis(null);
+    setRevPanel(null);
     setDoc(null);
 
     const { data } = await supabase
@@ -138,6 +200,7 @@ export default function Chat({ session }: { session: Session | null }) {
       tipo: r.tipo,
       estructura: r.metadata?.estructura,
       detalles: r.metadata?.detalles,
+      revision: r.metadata?.revision,
     }));
     setMensajes(cargados);
     setPasos([]);
@@ -146,6 +209,12 @@ export default function Chat({ session }: { session: Session | null }) {
     const persistido = await leerDocPersistido(id);
     docPersistidoRef.current = persistido;
     docMemoriaRef.current = persistido?.memoria ?? memoriaVacia();
+    setProyectoDisponible(persistido !== null);
+
+    // Cargar el snapshot de rúbrica/perfil de ESTE chat (respeta lo que usó).
+    const rec = await leerRecursosConversacion(id);
+    setRubrica(rec.rubrica);
+    setPerfil(rec.perfil);
   }
 
   async function eliminarConversacion(id: string) {
@@ -164,9 +233,14 @@ export default function Chat({ session }: { session: Session | null }) {
     setDoc(null);
     setPasos([]);
     setAnalisis(null);
+    setRevPanel(null);
     pendienteRef.current = null;
     docPersistidoRef.current = null;
     docMemoriaRef.current = memoriaVacia();
+    setProyectoDisponible(false);
+    // Un chat nuevo hereda el default del usuario.
+    setRubrica(preferenciasRef.current.rubrica);
+    setPerfil(preferenciasRef.current.perfil);
   }
 
   function agregarMensaje(m: Mensaje, convId?: string | null) {
@@ -187,8 +261,10 @@ export default function Chat({ session }: { session: Session | null }) {
       docMemoriaRef.current = memoriaVacia();
       docPersistidoRef.current = null;
 
-      const info = await subirDocumento(archivo);
+      const info = await subirDocumento(archivo, null, rubricaRef.current, perfilRef.current);
       setDoc(info);
+      setProyectoDisponible(true);
+      sincronizarRubricaMapeada(info);
 
       const convId = await asegurarConversacion(`Asesoría — ${info.nombre}`);
 
@@ -247,6 +323,8 @@ export default function Chat({ session }: { session: Session | null }) {
       const info = await rehidratar(persistido);
       if (info) {
         setDoc(info);
+        setProyectoDisponible(true);
+        sincronizarRubricaMapeada(info);
         docPersistidoRef.current = null;
       }
       return info;
@@ -255,24 +333,52 @@ export default function Chat({ session }: { session: Session | null }) {
     }
   }
 
-  async function subirRubricaPdf(archivo: File) {
+  // ── Recursos del navbar: rúbrica + perfil de universidad ────────────────────
+  /** Persiste rúbrica/perfil actuales como default del usuario y snapshot del chat. */
+  async function guardarRecursosActuales() {
+    const r = { rubrica: rubricaRef.current, perfil: perfilRef.current };
+    preferenciasRef.current = r;
+    if (userId) await guardarPreferencias(userId, r);
+    if (convActiva) await guardarRecursosConversacion(convActiva, r);
+  }
+
+  /** Tras indexar el proyecto, el backend devuelve la rúbrica ya mapeada: la re-persiste. */
+  function sincronizarRubricaMapeada(info: DocumentoInfo) {
+    const full = info.rubrica_full;
+    const tieneMapa = !!full?.mapa_secciones && Object.keys(full.mapa_secciones).length > 0;
+    const yaMapeada =
+      !!rubricaRef.current?.mapa_secciones &&
+      Object.keys(rubricaRef.current.mapa_secciones).length > 0;
+    if (full && tieneMapa && !yaMapeada) {
+      setRubrica(full);
+      rubricaRef.current = full;
+      void guardarRecursosActuales();
+    }
+  }
+
+  async function onSubirRubrica(archivo: File) {
     const vivo = await asegurarDocVivo();
     if (!vivo) {
       agregarMensaje({
         id: nuevoId(),
         rol: "assistant",
-        contenido: "⚠️ Primero necesito tu proyecto de tesis para asociar la rúbrica.",
+        contenido: "⚠️ Primero sube tu proyecto de tesis: la rúbrica se mapea a sus secciones al cargarla.",
       });
       return;
     }
-    setSubiendo(true);
-    setEtapaSubida("Parseando la rúbrica…");
+    setCargandoRubrica(true);
+    setEstadoRubrica("Transformando y mapeando la rúbrica a tus secciones…");
     try {
       const r = await subirRubrica(vivo.doc_id, archivo);
+      setRubrica(r.rubrica);
+      rubricaRef.current = r.rubrica;
+      await guardarRecursosActuales();
       agregarMensaje({
         id: nuevoId(),
         rol: "assistant",
-        contenido: `Rúbrica **${r.nombre}** cargada: ${r.total_items} ítems en ${r.secciones} secciones (máx. ${r.puntaje_maximo} pts). La usaré en lugar de la rúbrica UPAO.`,
+        contenido: `Rúbrica **${r.nombre}** cargada: ${r.total_items} ítems · ${r.secciones_mapeadas} secciones mapeadas`
+          + (r.items_ausentes ? ` · ${r.items_ausentes} criterio(s) que tu proyecto aún no cubre` : "")
+          + ` (máx. ${r.puntaje_maximo} pts). La usaré en lugar de la UPAO.`,
       });
     } catch (exc) {
       agregarMensaje({
@@ -281,7 +387,105 @@ export default function Chat({ session }: { session: Session | null }) {
         contenido: `⚠️ ${exc instanceof Error ? exc.message : exc}`,
       });
     } finally {
-      setSubiendo(false);
+      setCargandoRubrica(false);
+      setEstadoRubrica("");
+    }
+  }
+
+  async function onEliminarRubrica() {
+    setRubrica(null);
+    rubricaRef.current = null;
+    await guardarRecursosActuales();
+    if (doc) {
+      try {
+        await setRecursosDoc(doc.doc_id, { limpiar_rubrica: true });
+      } catch {
+        /* el doc puede haberse reiniciado; se aplicará al rehidratar */
+      }
+    }
+  }
+
+  async function onBuscarUniversidad(universidad: string, nivel: string) {
+    if (!universidad) return;
+    setCargandoPerfil(true);
+    setEstadoPerfil(`Buscando reglamentos de ${universidad}…`);
+    try {
+      const res = await buscarUniversidad(universidad, "ingeniería de sistemas", nivel);
+      if (res.encontrado && res.perfil) {
+        await aplicarPerfil(res.perfil);
+        const aviso = res.perfil.advertencia ? `\n\n⚠️ ${res.perfil.advertencia}` : "";
+        agregarMensaje({
+          id: nuevoId(),
+          rol: "assistant",
+          contenido: `Encontré los lineamientos de **${res.perfil.universidad}** (${res.perfil.nivel}). Los agentes adaptarán su criterio a esta universidad en este chat.${aviso}`,
+        });
+      } else {
+        agregarMensaje({
+          id: nuevoId(),
+          rol: "assistant",
+          contenido: `${res.motivo ?? `No encontré reglamentos públicos de **${universidad}**.`} Súbelos manualmente con el botón **Subir** del panel.`,
+        });
+      }
+    } catch (exc) {
+      agregarMensaje({
+        id: nuevoId(),
+        rol: "assistant",
+        contenido: `⚠️ ${exc instanceof Error ? exc.message : exc}`,
+      });
+    } finally {
+      setCargandoPerfil(false);
+      setEstadoPerfil("");
+    }
+  }
+
+  async function onSubirReglamento(archivo: File, universidad: string, nivel: string) {
+    if (!universidad) return;
+    setCargandoPerfil(true);
+    setEstadoPerfil("Procesando el reglamento…");
+    try {
+      const { perfil: p } = await subirReglamento(archivo, universidad, "ingeniería de sistemas", nivel);
+      await aplicarPerfil(p);
+      const aviso = p.advertencia ? `\n\n⚠️ ${p.advertencia}` : "";
+      agregarMensaje({
+        id: nuevoId(),
+        rol: "assistant",
+        contenido: `Reglamento de **${p.universidad}** cargado. Los agentes ajustarán su personalidad a estos lineamientos.${aviso}`,
+      });
+    } catch (exc) {
+      agregarMensaje({
+        id: nuevoId(),
+        rol: "assistant",
+        contenido: `⚠️ ${exc instanceof Error ? exc.message : exc}`,
+      });
+    } finally {
+      setCargandoPerfil(false);
+      setEstadoPerfil("");
+    }
+  }
+
+  async function aplicarPerfil(p: PerfilUniversidad) {
+    setPerfil(p);
+    perfilRef.current = p;
+    await guardarRecursosActuales();
+    if (doc) {
+      try {
+        await setRecursosDoc(doc.doc_id, { perfil_universidad: p });
+      } catch {
+        /* se aplicará al rehidratar */
+      }
+    }
+  }
+
+  async function onEliminarPerfil() {
+    setPerfil(null);
+    perfilRef.current = null;
+    await guardarRecursosActuales();
+    if (doc) {
+      try {
+        await setRecursosDoc(doc.doc_id, { limpiar_perfil: true });
+      } catch {
+        /* se aplicará al rehidratar */
+      }
     }
   }
 
@@ -326,7 +530,7 @@ export default function Chat({ session }: { session: Session | null }) {
   // ── Eventos SSE → timeline ─────────────────────────────────────────────────
   function aplicarEvento(
     e: EventoRun,
-    finalizar: (informe?: string, detalles?: AnalisisDetalle[]) => void,
+    finalizar: (informe?: string, detalles?: AnalisisDetalle[], revision?: RevisionCompleta) => void,
   ) {
     setPasos((prev) => {
       const completados = prev.map((p) => ({ ...p, estado: "completado" as const }));
@@ -346,14 +550,26 @@ export default function Chat({ session }: { session: Session | null }) {
         case "nodo":
           return pushCompletado(`${e.label} completado`);
         case "diagnostico":
-          return pushCompletado(`${e.capitulo} analizado — ${e.puntaje}/10`);
+          return pushCompletado(`${e.capitulo} calificado`);
         default:
           return prev;
       }
     });
 
     if (e.tipo === "resultado") {
-      finalizar(String(e.informe_md ?? ""), (e.detalles as AnalisisDetalle[]) ?? []);
+      if (e.resumen_chat) {
+        docMemoriaRef.current.ultima_revision =
+          e.resumen_chat as DocMemoria["ultima_revision"];
+      }
+      const rev = e.calificacion
+        ? ({
+            calificacion: e.calificacion as RevisionCompleta["calificacion"],
+            fortalezas: e.fortalezas as string[] | undefined,
+            debilidades: e.debilidades as string[] | undefined,
+            trazabilidad: e.trazabilidad as RevisionCompleta["trazabilidad"],
+          } as RevisionCompleta)
+        : undefined;
+      finalizar(String(e.informe_md ?? ""), (e.detalles as AnalisisDetalle[]) ?? [], rev);
     }
     if (e.tipo === "cancelado") {
       finalizar("⏹️ Revisión detenida. Lo avanzado no se perdió: pídeme continuar cuando quieras.");
@@ -481,7 +697,11 @@ export default function Chat({ session }: { session: Session | null }) {
 
       runIdRef.current = resp.run_id!;
       let terminado = false;
-      const finalizar = (informe?: string, detalles?: AnalisisDetalle[]) => {
+      const finalizar = (
+        informe?: string,
+        detalles?: AnalisisDetalle[],
+        revision?: RevisionCompleta,
+      ) => {
         if (terminado) return;
         terminado = true;
         registrarDetalles(detalles);
@@ -492,6 +712,7 @@ export default function Chat({ session }: { session: Session | null }) {
               rol: "assistant",
               contenido: informe,
               detalles: detalles && detalles.length > 0 ? detalles : undefined,
+              revision,
             },
             convId,
           );
@@ -546,6 +767,24 @@ export default function Chat({ session }: { session: Session | null }) {
         onSeleccionar={seleccionarConversacion}
         onEliminar={eliminarConversacion}
         onLogout={logout}
+        recursosSlot={
+          <RecursosPanel
+            rubrica={rubrica}
+            perfil={perfil}
+            hayProyecto={!!doc || proyectoDisponible}
+            cargandoRubrica={cargandoRubrica}
+            cargandoPerfil={cargandoPerfil}
+            estadoRubrica={estadoRubrica}
+            estadoPerfil={estadoPerfil}
+            onSubirRubrica={onSubirRubrica}
+            onEliminarRubrica={onEliminarRubrica}
+            onVerRubrica={() => setVerRubrica(true)}
+            onBuscarUniversidad={onBuscarUniversidad}
+            onSubirReglamento={onSubirReglamento}
+            onEliminarPerfil={onEliminarPerfil}
+            onVerPerfil={() => setVerPerfil(true)}
+          />
+        }
       />
 
       <main className="flex-1 flex flex-col relative">
@@ -600,11 +839,20 @@ export default function Chat({ session }: { session: Session | null }) {
           <>
             <div ref={scrollRef} className="flex-1 overflow-y-auto">
               <div className="mx-auto max-w-3xl px-5 py-8 space-y-5">
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                  <span className="rounded-full bg-muted px-2.5 py-1">
+                    Rúbrica: <span className="font-medium text-foreground/80">{rubrica ? rubrica.nombre : "UPAO (por defecto)"}</span>
+                  </span>
+                  <span className="rounded-full bg-muted px-2.5 py-1">
+                    Reglamento: <span className="font-medium text-foreground/80">{perfil ? perfil.universidad : "criterio base"}</span>
+                  </span>
+                </div>
                 {mensajes.map((m) => (
                   <MessageBubble
                     key={m.id}
                     mensaje={m}
                     onVerAnalisis={setAnalisis}
+                    onVerRevision={setRevPanel}
                     onAccion={manejarAccion}
                   />
                 ))}
@@ -636,7 +884,7 @@ export default function Chat({ session }: { session: Session | null }) {
                         variant="outline"
                         className="rounded-full"
                         onClick={() => {
-                          subirRubricaPdf(archivoPendiente);
+                          onSubirRubrica(archivoPendiente);
                           setArchivoPendiente(null);
                         }}
                       >
@@ -674,6 +922,13 @@ export default function Chat({ session }: { session: Session | null }) {
         )}
 
         {analisis && <AnalisisPanel detalle={analisis} onCerrar={() => setAnalisis(null)} />}
+        {revPanel && <RevisionCompletaPanel revision={revPanel} onCerrar={() => setRevPanel(null)} />}
+        {verRubrica && rubrica && (
+          <RubricaTabla rubrica={rubrica} onCerrar={() => setVerRubrica(false)} />
+        )}
+        {verPerfil && perfil && (
+          <PerfilModal perfil={perfil} onCerrar={() => setVerPerfil(false)} />
+        )}
       </main>
     </div>
   );

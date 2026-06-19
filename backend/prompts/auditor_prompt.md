@@ -63,10 +63,10 @@ Eres un evaluador académico especializado en proyectos de investigación. Tu fu
 ## INSTRUCCIONES DE EVALUACIÓN
 
 1. **Evalúa TODOS los ítems listados** en la tabla de arriba sin excepción
-2. **Asigna puntaje 0–3** a cada ítem según la escala
-3. **Incluye en `items_evaluados` TODOS los ítems**, tanto los que fallan (puntaje 0–1) como los que pasan (puntaje 2–3). Es obligatorio para que `puntaje_total` sea la suma real de todos los ítems.
-4. **Reporta errores (`puntaje < 2`) con observaciones específicas** — indica exactamente qué falta o qué está mal
-5. **Para ítems que se cumplen bien (puntaje 2–3)**: inclúyelos con una observación breve confirmando que el criterio se cumple. No los omitas.
+2. **Asigna puntaje de 0 a {escala_max}** a cada ítem según la escala de ESTA rúbrica (0 = no cumple, {escala_max} = excelente). No uses una escala distinta a la indicada.
+3. **Incluye en `items_evaluados` TODOS los ítems**, tanto los que fallan como los que pasan. Es obligatorio para que `puntaje_total` sea la suma real de todos los ítems.
+4. **Reporta errores (ítems por debajo de ~2/3 de {escala_max}) con observaciones específicas** — indica exactamente qué falta o qué está mal
+5. **Para ítems que se cumplen bien (cerca de {escala_max})**: inclúyelos con una observación breve confirmando que el criterio se cumple. No los omitas.
 6. **Calcula `puntaje_total`** sumando los puntajes de TODOS los ítems evaluados (debe ser la suma real, no solo de los ítems con error)
 7. **`aprobado = true`** SOLO cuando NO hay ítems con puntaje < 2
 8. **Si el texto contiene placeholders `[COMPLETAR: ...]`**: evalúa ese ítem con puntaje 0 o 1 según corresponda e indica que el estudiante debe completar esa sección con contenido real

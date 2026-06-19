@@ -88,6 +88,7 @@
   background: transparent;
 }
 
+.prose-informe { overflow-wrap: anywhere; }
 .prose-informe h1 { @apply text-xl font-semibold mt-5 mb-2; }
 .prose-informe h2 { @apply text-lg font-semibold mt-5 mb-2; }
 .prose-informe h3 { @apply text-base font-semibold mt-4 mb-1.5; }
@@ -97,3 +98,30 @@
 .prose-informe strong { @apply font-semibold; }
 .prose-informe hr { @apply my-4 border-border; }
 .prose-informe blockquote { @apply border-l-2 border-primary/40 pl-3 text-muted-foreground my-2; }
+
+/* Tablas (GFM) — legibles en el ancho del chat, con scroll horizontal si son anchas */
+.prose-informe table {
+  @apply my-3 text-[13px] border-collapse;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.prose-informe thead th { @apply bg-muted font-semibold; }
+.prose-informe th,
+.prose-informe td {
+  @apply border border-border px-2.5 py-1.5 align-top leading-snug;
+  min-width: 7rem;
+}
+.prose-informe :not(pre) > code { @apply bg-muted rounded px-1 py-0.5 text-[0.9em]; }
+.prose-informe pre { @apply bg-muted rounded-xl p-3 my-2 overflow-x-auto text-[13px]; }
+.prose-informe pre code { @apply bg-transparent p-0; }
+
+/* Barra de progreso indeterminada (carga de rúbrica / reglamento) */
+@keyframes progreso-indeterminado {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+.animate-progreso-indeterminado {
+  animation: progreso-indeterminado 1.1s ease-in-out infinite;
+}

@@ -25,6 +25,9 @@ pyyaml>=6.0                         # Parseo de rúbricas YAML
 google-cloud-storage>=2.14.0        # Subida a GCS (opcional, solo si GCS_BUCKET_NAME)
 requests>=2.31.0                    # Google Drive loader
 
+# ── Búsqueda web de reglamentos (perfil por universidad) ──────────────────────
+tavily-python>=0.5.0               # Búsqueda de reglamentos (opcional, si TAVILY_API_KEY)
+
 # ── API FastAPI (Cloud Run) ───────────────────────────────────────────────────
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0

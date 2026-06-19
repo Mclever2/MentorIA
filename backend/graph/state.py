@@ -28,6 +28,19 @@ class MentoriaState(TypedDict):
     feedback_auditor:       str
     errores_rubrica:        List[ErrorRubrica]
     puntaje_estimado:       Optional[int]
+    puntaje_previo:         Optional[float]
+    meta_aprobacion:        Optional[float]
+    items_mejorables:       Optional[List]
+    items_na_tipo:          Optional[List]
+    contexto_coherencia:    Optional[str]
+    modo_nucleo:            Optional[bool]
+    nucleo_plan:            Optional[Dict]
+    redactor_solo_pulido:   Optional[bool]
+    mejor_texto:            Optional[str]
+    mejor_puntaje:          Optional[float]
+    mejor_errores:          Optional[List]
+    mejor_eval_final:       Optional[List]
+    mejor_items_mejorables: Optional[List]
 
     observaciones_metodologicas: str
 
@@ -54,6 +67,9 @@ class MentoriaState(TypedDict):
     universidad:              str
     programa:                 str
     modalidad:                str
+    perfil_institucional:     Optional[str]
+    tipo_investigacion:       Optional[str]
+    diseno:                   Optional[str]
 
     run_id:                   str
     puntaje_inicial:          Optional[float]
@@ -76,6 +92,10 @@ class MentoriaState(TypedDict):
     redactor_evaluacion_rubrica: Optional[Dict]
     redactor_sugerencias_mejoras: Optional[str]
     historial_textos:            Optional[List[str]]
+    # Nota de la RÚBRICA (auditor) en cada iteración de la red: [{iteracion, puntaje, maximo}].
+    # La iteración es cosa de la red (rúbrica por defecto / subida); alimenta la trayectoria
+    # que se muestra (NO el juez LLM, que solo corre inicial/final para el gain score).
+    historial_puntajes_rubrica:  Optional[List[Dict]]
     evaluacion_upao_inicial:     Optional[List[Dict]]
     evaluacion_upao_final:       Optional[List[Dict]]
 
