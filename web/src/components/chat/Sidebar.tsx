@@ -9,6 +9,7 @@ import {
   PlusIcon,
   SlidersHorizontal,
   Trash2,
+  X,
 } from "lucide-react";
 
 import ThemeToggle from "@/components/ThemeToggle";
@@ -26,6 +27,9 @@ interface SidebarProps {
   onEliminar: (id: string) => void;
   onLogout: () => void;
   recursosSlot?: React.ReactNode;
+  /** Estado del cajón en móvil. En ≥md el sidebar es columna fija y esto se ignora. */
+  abierto?: boolean;
+  onCerrar?: () => void;
 }
 
 type Tab = "historial" | "recursos";
@@ -39,6 +43,8 @@ export default function Sidebar({
   onEliminar,
   onLogout,
   recursosSlot,
+  abierto = false,
+  onCerrar,
 }: SidebarProps) {
   const [libros, setLibros] = useState<{ nombre: string; fragmentos: number }[]>([]);
   const [librosError, setLibrosError] = useState(false);
@@ -51,15 +57,34 @@ export default function Sidebar({
   }, []);
 
   return (
-    <aside className="w-72 shrink-0 h-screen flex flex-col bg-white/55 dark:bg-zinc-900/50 backdrop-blur-xl border-r border-border">
-      <Link to="/" className="flex items-center gap-2 font-semibold px-5 pt-5 pb-3">
-        <GraduationCap className="w-5 h-5 text-primary" />
-        MentorIA
-      </Link>
+    <aside
+      className={cn(
+        "w-72 shrink-0 h-screen flex flex-col bg-white/55 dark:bg-zinc-900/50 backdrop-blur-xl border-r border-border",
+        // En móvil: cajón deslizante. En ≥md: columna fija de siempre (sin cambios).
+        "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:shadow-2xl max-md:transition-transform max-md:duration-300",
+        abierto ? "max-md:translate-x-0" : "max-md:-translate-x-full",
+      )}
+    >
+      <div className="flex items-center justify-between px-5 pt-5 pb-3">
+        <Link to="/" className="flex items-center gap-2 font-semibold">
+          <GraduationCap className="w-5 h-5 text-primary" />
+          MentorIA
+        </Link>
+        <button
+          onClick={onCerrar}
+          className="md:hidden p-1.5 -mr-1.5 rounded-lg hover:bg-muted text-muted-foreground"
+          aria-label="Cerrar menú"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
 
       <div className="px-4">
         <Button
-          onClick={onNueva}
+          onClick={() => {
+            onNueva();
+            onCerrar?.();
+          }}
           variant="outline"
           className="w-full rounded-2xl justify-start gap-2 bg-card/70"
         >
@@ -108,7 +133,10 @@ export default function Sidebar({
               {conversaciones.map((c) => (
                 <li key={c.id} className="group relative">
                   <button
-                    onClick={() => onSeleccionar(c.id)}
+                    onClick={() => {
+                      onSeleccionar(c.id);
+                      onCerrar?.();
+                    }}
                     className={cn(
                       "w-full text-left rounded-xl px-3 py-2 text-[13px] flex items-center gap-2 transition-colors",
                       c.id === conversacionActiva
