@@ -121,6 +121,13 @@ def _estado_proyecto(doc) -> str:
         txt += "\n- Secciones que YA revisaste con la red de agentes en este chat: " + ", ".join(revisadas) + "."
     else:
         txt += "\n- Todavía no has corrido ninguna revisión formal en este chat."
+
+    # Resultado de la última evaluación (para no perder el hilo de las notas/hallazgos).
+    ult = getattr(doc, "ultima_revision", None) or {}
+    if ult.get("texto"):
+        txt += ("\n- RESULTADO DE LA ÚLTIMA EVALUACIÓN (úsalo para responder dudas sobre su nota, "
+                "puntos débiles y qué mejorar; no le pidas que vuelva a evaluar para esto):\n  "
+                + ult["texto"])
     return txt
 
 
@@ -148,8 +155,18 @@ def responder_consulta(
     libros, fuente_ej = _recuperar_libros(biblioteca, mensaje)
     tesis = _recuperar_tesis(doc, mensaje)
 
+    estado = _estado_proyecto(doc)
+    if doc is not None:
+        try:
+            from .tipo_investigacion import obtener_tipo_diseno
+            from backend.enfoque import bloque_enfoque
+            tipo, diseno = obtener_tipo_diseno(doc)
+            estado += "\n\n" + bloque_enfoque(tipo, diseno)
+        except Exception as exc:
+            logger.warning(f"[conversador] No se pudo detectar el tipo: {exc}")
+
     sistema = _PROMPT_SISTEMA.format(
-        estado=_estado_proyecto(doc),
+        estado=estado,
         libros=libros or "(sin fragmentos de libros recuperados para esta consulta)",
         tesis=tesis or "(sin fragmentos de la tesis — o el proyecto no está cargado)",
         fuente_ejemplo=fuente_ej,

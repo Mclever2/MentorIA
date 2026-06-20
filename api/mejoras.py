@@ -36,7 +36,21 @@ def exportar_memoria(doc) -> dict:
         "evaluadas": sorted(doc.evaluadas),
         "aplicadas": {s: m["texto"] for s, m in doc.mejoras.items() if m.get("aplicada")},
         "pendientes": {s: m["texto"] for s, m in doc.mejoras.items() if not m.get("aplicada")},
+        "ultima_revision": doc.ultima_revision or {},
     }
+
+
+def reset_memoria(doc) -> None:
+    """Limpia el estado de evaluación POR CHAT (evaluadas / mejoras / última revisión).
+
+    El vector store del PDF se reutiliza entre chats con el mismo proyecto (no
+    re-indexar), pero QUÉ secciones se evaluaron y sus correcciones son propios de
+    cada conversación. Se llama antes de restaurar la memoria del chat que sube el
+    PDF, para no arrastrar lo evaluado en otra conversación.
+    """
+    doc.evaluadas = set()
+    doc.mejoras = {}
+    doc.ultima_revision = {}
 
 
 def restaurar_memoria(doc, memoria: dict) -> None:
@@ -47,6 +61,9 @@ def restaurar_memoria(doc, memoria: dict) -> None:
     """
     if not memoria:
         return
+
+    if memoria.get("ultima_revision"):
+        doc.ultima_revision = memoria["ultima_revision"]
 
     for s in memoria.get("evaluadas", []):
         doc.evaluadas.add(s)

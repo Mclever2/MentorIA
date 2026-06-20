@@ -186,11 +186,22 @@ _STOP_CFG = {
 }
 
 
+def _stem_token(t: str) -> str:
+    """Stemming ligero ES: une singular/plural recortando solo la 's' final.
+
+    Los plurales relevantes aquí son de '+s' (variable→variables, término→términos,
+    objetivo→objetivos), así que recortar 'es' rompería 'variables'→'variabl'≠'variable'.
+    """
+    if len(t) > 4 and t.endswith("s"):
+        return t[:-1]
+    return t
+
+
 def _kw_seccion(texto: str) -> set[str]:
     """Palabras significativas de un nombre de sección (sin números, acentos, ni stop words)."""
     sin_acentos = unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode('ascii')
     tokens = re.sub(r'[\d\.\,\-–\(\)\[\]/]', ' ', sin_acentos.lower()).split()
-    return {t for t in tokens if len(t) > 2 and t not in _STOP_CFG}
+    return {_stem_token(t) for t in tokens if len(t) > 2 and t not in _STOP_CFG}
 
 
 def _prefijo_num(nombre: str) -> str:
@@ -219,47 +230,66 @@ def _prefijos_rango(seccion: str) -> list[str]:
     return [f"{padre}.{i}" if padre else str(i) for i in range(pi[-1], pf[-1] + 1)]
 
 
+def _mejor_semantica(seccion: str) -> tuple[str | None, float]:
+    """Mejor clave de SECCION_ITEMS_MAP por solapamiento de palabras clave (Jaccard)."""
+    kw = _kw_seccion(seccion)
+    if not kw:
+        return None, 0.0
+    mejor_key: str | None = None
+    mejor_jaccard = 0.0
+    for k in SECCION_ITEMS_MAP:
+        kw_k = _kw_seccion(k)
+        inter = len(kw & kw_k)
+        if inter == 0:
+            continue
+        jaccard = inter / len(kw | kw_k)
+        if jaccard > mejor_jaccard:
+            mejor_jaccard = jaccard
+            mejor_key = k
+    return mejor_key, mejor_jaccard
+
+
 def _seccion_rubrica_para(seccion: str) -> str | None:
     """
     Clave de SECCION_ITEMS_MAP que gobierna la rúbrica de `seccion` (o None).
 
-    Estrategia en cascada:
+    El SIGNIFICADO manda sobre el NÚMERO: si la tesis usa una numeración distinta
+    a la plantilla UPAO (p. ej. 2.2 = Base teórica en lugar de Antecedentes), el
+    prefijo numérico llevaría a la sección equivocada. Por eso:
       1. Coincidencia exacta de nombre.
-      2. Prefijo numérico exacto (ej. '1.1.1' → clave con prefijo '1.1.1').
-      3. Mayor overlap de palabras clave (PDFs con distinta numeración).
-      4. Prefijo del padre inmediato (ej. '1.2.1' → clave con prefijo '1.2').
+      2. Semántica FUERTE (Jaccard ≥ 0.5) si discrepa del prefijo → manda la semántica.
+      3. Prefijo numérico exacto.
+      4. Semántica débil (cualquier solapamiento).
+      5. Ancestro numérico subiendo niveles ('5.2.1' → '5.2' → '5').
     """
     if seccion in SECCION_ITEMS_MAP:
         return seccion
 
     prefijo_num = _prefijo_num(seccion) or None
+    cand_prefijo: str | None = None
     if prefijo_num:
         for k in SECCION_ITEMS_MAP:
             if _prefijo_num(k) == prefijo_num:
-                return k
+                cand_prefijo = k
+                break
 
-    kw = _kw_seccion(seccion)
-    if kw:
-        mejor_jaccard = 0.0
-        mejor_key: str | None = None
-        for k in SECCION_ITEMS_MAP:
-            kw_k  = _kw_seccion(k)
-            inter = len(kw & kw_k)
-            if inter == 0:
-                continue
-            union   = len(kw | kw_k)
-            jaccard = inter / union if union else 0.0
-            if jaccard > mejor_jaccard:
-                mejor_jaccard = jaccard
-                mejor_key     = k
-        if mejor_jaccard > 0:
-            return mejor_key
+    cand_sem, jaccard = _mejor_semantica(seccion)
 
-    if prefijo_num and '.' in prefijo_num:
-        padre = prefijo_num.rsplit('.', 1)[0]
-        for k in SECCION_ITEMS_MAP:
-            if _prefijo_num(k) == padre:
-                return k
+    # La semántica fuerte corrige numeraciones distintas a UPAO.
+    if cand_sem and jaccard >= 0.5 and cand_sem != cand_prefijo:
+        return cand_sem
+    if cand_prefijo:
+        return cand_prefijo
+    if cand_sem:
+        return cand_sem
+
+    if prefijo_num:
+        partes = prefijo_num.split('.')
+        for corte in range(len(partes) - 1, 0, -1):
+            padre = '.'.join(partes[:corte])
+            for k in SECCION_ITEMS_MAP:
+                if _prefijo_num(k) == padre:
+                    return k
 
     return None
 
@@ -305,10 +335,15 @@ def prefijos_evaluacion_para_seccion(seccion: str) -> list[str]:
     return propios
 
 
+# Escala de calificación POR ÍTEM (0 a ESCALA_MAX). Antes era 3; ahora 5 para que
+# los agentes califiquen con más granularidad (default UPAO y rúbricas subidas).
+ESCALA_MAX = 5
+
+
 def get_items_texto_para_seccion(seccion: str) -> str:
     """Genera la tabla de ítems relevantes para una sección, lista para inyectar en el prompt."""
     items_nums = _buscar_items_seccion(seccion) or list(RUBRICA_ITEMS_UPAO.keys())
-    lineas = ["| N° | Ítem de la Rúbrica UPAO | Puntaje (0-3) |",
+    lineas = [f"| N° | Ítem de la Rúbrica UPAO | Puntaje (0-{ESCALA_MAX}) |",
               "|----|-----------------------------|--------------|"]
     for num in items_nums:
         desc = RUBRICA_ITEMS_UPAO.get(num, "Ítem sin descripción")
@@ -317,8 +352,8 @@ def get_items_texto_para_seccion(seccion: str) -> str:
 
 
 def get_puntaje_maximo_seccion(seccion: str) -> int:
-    """Puntaje máximo posible para la sección (nro. de ítems × 3)."""
-    return len(_buscar_items_seccion(seccion)) * 3
+    """Puntaje máximo posible para la sección (nro. de ítems × ESCALA_MAX)."""
+    return len(_buscar_items_seccion(seccion)) * ESCALA_MAX
 
 
 DEPENDENCIAS_SECCIONES: dict[str, list[str]] = {

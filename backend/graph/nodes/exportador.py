@@ -96,6 +96,8 @@ def make_nodo_exportador():
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "universidad": state.get("universidad", ""),
             "programa":    state.get("programa", ""),
+            "tipo_investigacion": state.get("tipo_investigacion"),
+            "diseno":             state.get("diseno"),
             "arquitectura": "langgraph-hub-spoke",
             "seccion_objetivo": state.get("seccion_objetivo", ""),
             "contexto_teorico": state.get("contexto_teorico", ""),
@@ -116,6 +118,7 @@ def make_nodo_exportador():
             "redactor_evaluacion_rubrica": state.get("redactor_evaluacion_rubrica"),
             "redactor_sugerencias_mejoras": state.get("redactor_sugerencias_mejoras"),
             "historial_textos": state.get("historial_textos"),
+            "historial_puntajes_rubrica": state.get("historial_puntajes_rubrica"),
             "evaluacion_upao_inicial": state.get("evaluacion_upao_inicial"),
             "evaluacion_upao_final": state.get("evaluacion_upao_final"),
 
@@ -139,17 +142,23 @@ def make_nodo_exportador():
 
         ruta_eval    = None
         ruta_reporte = None
-        try:
-            from evaluator.evaluator import evaluar_desde_archivo
-            from evaluator.report import guardar_reporte
-            
-            evaluar_desde_archivo(str(ruta))
-            ruta_eval    = _OUTPUTS_DIR / f"eval_{run_id}.json"
-            ruta_reporte = guardar_reporte(str(ruta_eval))
-                
-            logger.info(f"[Exportador] Métricas en {ruta_eval} | Reporte en {ruta_reporte}")
-        except Exception as exc:
-            logger.warning(f"[Exportador] No se pudieron generar métricas NLP: {exc}")
+        # En modo NÚCLEO (subcorrida interna de la revisión completa) NO se corren las
+        # métricas NLP ni el juez LLM: es cómputo desperdiciado (la calificación real
+        # sale del barrido por ítem, no de esta subcorrida).
+        if state.get("modo_nucleo"):
+            logger.info("[Exportador] modo núcleo — se omiten métricas NLP/juez (subcorrida interna).")
+        else:
+            try:
+                from evaluator.evaluator import evaluar_desde_archivo
+                from evaluator.report import guardar_reporte
+
+                evaluar_desde_archivo(str(ruta))
+                ruta_eval    = _OUTPUTS_DIR / f"eval_{run_id}.json"
+                ruta_reporte = guardar_reporte(str(ruta_eval))
+
+                logger.info(f"[Exportador] Métricas en {ruta_eval} | Reporte en {ruta_reporte}")
+            except Exception as exc:
+                logger.warning(f"[Exportador] No se pudieron generar métricas NLP: {exc}")
 
         _subir_a_gcs(ruta, f"runs/run_{run_id}.json")
         _subir_a_gcs(ruta_debate_md, f"runs/debate_{run_id}.md")

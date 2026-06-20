@@ -8,7 +8,11 @@ from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from backend.config import SECCIONES_TESIS, prefijos_evaluacion_para_seccion
+from backend.config import (
+    SECCIONES_TESIS,
+    prefijos_evaluacion_para_seccion,
+    _seccion_rubrica_para,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -238,6 +242,15 @@ def _buscar_query_semantica(seccion: str) -> str:
         if sec["nombre"] == seccion:
             return sec["query"]
 
+    # Resolver por la sección de rúbrica que GOBIERNA esta (prefijo + semántica
+    # fuerte). Evita que palabras genéricas ("estudio") elijan la query equivocada
+    # (p. ej. '4.3 Diseño del estudio' → query de '1.3 Importancia del estudio').
+    key = _seccion_rubrica_para(seccion)
+    if key:
+        for sec in SECCIONES_TESIS:
+            if sec["nombre"] == key:
+                return sec["query"]
+
     kw_seccion = _palabras_clave(seccion)
     if kw_seccion:
         mejor_score = 0
@@ -311,6 +324,15 @@ def construir_vector_store(
     return store
 
 
+def limpiar_marcas_rag(texto: str) -> str:
+    """Quita los marcadores que añade el RAG ('[Fragmento N]', separadores '---')
+    para que nunca lleguen al chat ni al texto que ve/echo el LLM."""
+    import re as _re
+    t = _re.sub(r"\[Fragmento\s*\d+\]", "", texto or "")
+    t = _re.sub(r"\n\s*-{3,}\s*\n", "\n\n", t)
+    return _re.sub(r"\n{3,}", "\n\n", t).strip()
+
+
 def recuperar_contexto(
     vector_store: Chroma,
     seccion: str,
@@ -335,6 +357,20 @@ def recuperar_contexto(
             "El estudiante puede no haber redactado aún esta sección."
         )
 
+    # Secciones SIN prefijo numérico (p. ej. la carátula sintética "Título del
+    # proyecto"): traer SOLO sus propios chunks, sin expandir a un capítulo entero.
+    if not _extraer_prefijo(seccion):
+        propios = [d for d in todos_docs if d.metadata.get("seccion") == seccion]
+        if propios:
+            propios.sort(key=lambda d: d.metadata.get("chunk_index", 0))
+            propios = propios[:MAX_FRAGMENTOS_SECCION]
+            fragmentos = [f"[Fragmento {i + 1}]\n{d.page_content}" for i, d in enumerate(propios)]
+            logger.info(
+                f"RAG tesis: sección sin prefijo '{seccion}' → "
+                f"{len(propios)} fragmentos propios (sin expandir a capítulo)"
+            )
+            return "\n\n" + "\n\n---\n\n".join(fragmentos) + "\n"
+
     top_meta = [d.metadata.get("seccion") for d in todos_docs[:K_INICIAL]
                 if d.metadata.get("seccion")]
 
@@ -347,25 +383,22 @@ def recuperar_contexto(
         # general') esto devuelve el prefijo padre ('1.2') para que la sección
         # hermana ('1.2.2 Objetivos específicos') entre en el mismo contexto.
         config_prefijos = prefijos_evaluacion_para_seccion(seccion) or _extraer_prefijos_rango(seccion)
-        top_prefijos    = [_extraer_prefijo(s) for s in top_meta if _extraer_prefijo(s)]
+        docs_config = [
+            d for d in todos_docs
+            if any(_es_subseccion(d.metadata.get("seccion", ""), cp) for cp in config_prefijos)
+        ] if config_prefijos else []
 
-        config_relevante = bool(config_prefijos) and any(
-            any(pt == cp or pt.startswith(cp + ".") or cp.startswith(pt + ".")
-                for pt in top_prefijos)
-            for cp in config_prefijos
-        )
-
-        if config_relevante:
-            docs = [d for d in todos_docs
-                    if any(_es_subseccion(d.metadata.get("seccion", ""), cp)
-                           for cp in config_prefijos)]
-            docs.sort(key=lambda d: d.metadata.get("chunk_index", 0))
-            docs = docs[:MAX_FRAGMENTOS_SECCION]
+        if docs_config:
+            # El prefijo numérico de la sección es AUTORITATIVO: usa sus propios chunks
+            # aunque la similitud rankee más alto otra sección parecida (corrige p. ej.
+            # 'Antecedentes' → 'Referencias', que comparten vocabulario de autores/citas).
+            docs = sorted(docs_config, key=lambda d: d.metadata.get("chunk_index", 0))[:MAX_FRAGMENTOS_SECCION]
             logger.info(
                 f"RAG tesis: prefijos config {config_prefijos} → "
-                f"{len(docs)} fragmentos (sección + subsecciones)"
+                f"{len(docs)} fragmentos (anclado por prefijo)"
             )
         else:
+            top_prefijos = [_extraer_prefijo(s) for s in top_meta if _extraer_prefijo(s)]
             ancestor = _prefijo_ancestro_comun(top_prefijos)
             if ancestor:
                 docs = [d for d in todos_docs
@@ -397,6 +430,40 @@ def recuperar_contexto(
     resultado = "\n\n" + "\n\n---\n\n".join(fragmentos) + "\n"
     logger.info(f"RAG tesis: {len(resultado)} chars totales recuperados")
     return resultado
+
+
+def resolver_seccion_semantica(
+    vector_store: Chroma,
+    concepto: str,
+    toc_nombres: list[str] | None = None,
+    k: int = 6,
+) -> str | None:
+    """Ubica vía RAG la sección del TOC que CONTIENE un sub-concepto.
+
+    Útil cuando el estudiante pide evaluar algo que no es un título exacto del
+    índice (p. ej. 'operacionalización de variables', 'variable dependiente'),
+    porque ese contenido vive DENTRO de una sección mayor ('3.2 Variables') y
+    no aparece tal cual en el TOC. Devuelve el nombre de la sección dominante
+    entre los fragmentos más similares, o None si no hay coincidencia.
+    """
+    if not concepto or vector_store is None:
+        return None
+    try:
+        docs = vector_store.similarity_search(concepto, k=k)
+    except Exception as exc:
+        logger.warning(f"[resolver_seccion] Error RAG para '{concepto}': {exc}")
+        return None
+
+    from collections import Counter
+
+    secs = [d.metadata.get("seccion") for d in docs if d.metadata.get("seccion")]
+    if not secs:
+        return None
+    for sec, _freq in Counter(secs).most_common():
+        if not toc_nombres or sec in toc_nombres:
+            logger.info(f"[resolver_seccion] '{concepto}' → '{sec}'")
+            return sec
+    return None
 
 
 _CONSULTAS_CRUZADAS: dict[str, str] = {

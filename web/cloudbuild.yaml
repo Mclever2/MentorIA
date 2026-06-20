@@ -1,8 +1,9 @@
 # Construye el frontend en Cloud Build inyectando las VITE_* en build-time
-# (quedan embebidas en el bundle estático). Valores públicos horneados aquí para
-# no depender de --substitutions (PowerShell rompe las comas del flag).
+# (quedan embebidas en el bundle estático). Evita necesitar Docker local.
 #
-# Uso (desde web/):  gcloud builds submit . --config cloudbuild.yaml
+# Uso (desde la raíz del repo):
+#   gcloud builds submit web --config web/cloudbuild.yaml \
+#     --substitutions=_VITE_API_URL=https://mentoria-api-XXXX.run.app,_VITE_SUPABASE_URL=https://XXXX.supabase.co,_VITE_SUPABASE_ANON_KEY=eyJ...
 steps:
   - name: gcr.io/cloud-builders/docker
     args:

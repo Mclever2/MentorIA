@@ -31,12 +31,15 @@ def evaluar(datos: dict) -> dict:
         texto_final = texto_inicial
     seccion_objetivo = datos.get("seccion_objetivo", "")
     contexto_teorico = datos.get("contexto_teorico", "")
-    historial_textos = datos.get("historial_textos", [])
+    tipo_investigacion = datos.get("tipo_investigacion")
 
-    logger.info(f"[Evaluator] Iniciando evaluación de run_id={datos.get('run_id')}...")
+    logger.info(
+        f"[Evaluator] Iniciando evaluación de run_id={datos.get('run_id')} "
+        f"(tipo={tipo_investigacion or 'cuantitativa'})..."
+    )
 
     try:
-        eval_final = evaluar_con_juez_llm(seccion_objetivo, texto_final, es_panel=True)
+        eval_final = evaluar_con_juez_llm(seccion_objetivo, texto_final, es_panel=True, tipo=tipo_investigacion)
     except Exception as exc:
         logger.error(f"[Evaluator] Error en LLM-as-judge final: {exc}")
         from .metrics.llm_judge import EvaluacionSeccion
@@ -49,7 +52,7 @@ def evaluar(datos: dict) -> dict:
 
     try:
         if texto_inicial.strip() and texto_inicial != texto_final:
-            eval_inicial = evaluar_con_juez_llm(seccion_objetivo, texto_inicial, es_panel=False)
+            eval_inicial = evaluar_con_juez_llm(seccion_objetivo, texto_inicial, es_panel=False, tipo=tipo_investigacion)
             
             ids_comunes = {item.item_id for item in eval_final.items} & {item.item_id for item in eval_inicial.items}
             
@@ -96,18 +99,23 @@ def evaluar(datos: dict) -> dict:
         logger.warning(f"[Evaluator] Error en Context Precision: {exc}")
         ctx_precision = {"context_precision": 0.0, "chunks_totales": 0, "chunks_relevantes": 0, "interpretacion": f"Error: {exc}"}
 
+    # Trayectoria por iteración = nota de la RÚBRICA (auditor/red), NO del juez LLM.
+    # El juez solo corre inicial y final (arriba) para el Gain Score; la iteración es
+    # cosa de la red multiagente (rúbrica por defecto / subida). Antes esto re-corría
+    # el juez una vez por cada versión de texto (calificándolo en cada iteración).
+    historial_puntajes = datos.get("historial_puntajes_rubrica") or []
     trajectory = []
     has_iter = False
-    if isinstance(historial_textos, list) and len(historial_textos) >= 3:
+    if isinstance(historial_puntajes, list) and len(historial_puntajes) >= 2:
         has_iter = True
-        logger.info(f"[Evaluator] Calculando Iterative Consistency para {len(historial_textos)} versiones de texto...")
-        for idx, t in enumerate(historial_textos):
+        logger.info(f"[Evaluator] Trayectoria de la rúbrica: {len(historial_puntajes)} iteración(es).")
+        for p in historial_puntajes:
             try:
-                eval_t = evaluar_con_juez_llm(seccion_objetivo, t, es_panel=False)
-                trajectory.append(eval_t.puntaje_total)
-            except Exception as exc:
-                logger.warning(f"[Evaluator] Error evaluando iteración {idx} para consistencia: {exc}")
-                trajectory.append(0.0)
+                pts = round(float(p.get("puntaje", 0)), 1)
+                mx = round(float(p.get("maximo", 0)), 1)
+                trajectory.append(f"{pts:g}/{mx:g}" if mx else f"{pts:g}")
+            except (TypeError, ValueError):
+                continue
 
     resultado = {
         "run_id": datos.get("run_id"),

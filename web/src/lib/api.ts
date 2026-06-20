@@ -65,6 +65,8 @@ export interface DocMemoria {
   evaluadas: string[];
   aplicadas: Record<string, string>;
   pendientes: Record<string, string>;
+  // Resumen de la última evaluación, para que el chat rápido no pierda el hilo.
+  ultima_revision?: { tipo?: string; texto?: string };
 }
 
 export async function subirDocumento(
@@ -93,6 +95,7 @@ export interface SubirRubricaResp {
   total_items: number;
   secciones?: number;
   secciones_mapeadas?: number;
+  items_ausentes?: number;
   puntaje_maximo: number;
 }
 

@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { BookOpenCheck, FileSearch, Layers, ListChecks, Loader2, Menu } from "lucide-react";
 
 import AnalisisPanel from "@/components/chat/AnalisisPanel";
+import RevisionCompletaPanel from "@/components/chat/RevisionCompletaPanel";
 import ChatInput from "@/components/chat/ChatInput";
 import FondoLiquido from "@/components/chat/FondoLiquido";
 import MessageBubble from "@/components/chat/MessageBubble";
@@ -54,6 +55,7 @@ import type {
   Mensaje,
   PasoProgreso,
   PerfilUniversidad,
+  RevisionCompleta,
   RubricaPersist,
 } from "@/types";
 
@@ -80,9 +82,9 @@ export default function Chat({ session }: { session: Session | null }) {
   const [archivoPendiente, setArchivoPendiente] = useState<File | null>(null);
   const [ejecutando, setEjecutando] = useState(false);
   const [pasos, setPasos] = useState<PasoProgreso[]>([]);
-  const [iteraciones, setIteraciones] = useState(2);
+  const [iteraciones, setIteraciones] = useState(1);
   const [analisis, setAnalisis] = useState<AnalisisDetalle | null>(null);
-  const [navAbierto, setNavAbierto] = useState(false); // cajón del sidebar en móvil
+  const [revPanel, setRevPanel] = useState<RevisionCompleta | null>(null);
 
   // Rúbrica + perfil de universidad (snapshot por chat, default del usuario)
   const [rubrica, setRubrica] = useState<RubricaPersist | null>(null);
@@ -169,6 +171,7 @@ export default function Chat({ session }: { session: Session | null }) {
     const metadata: Record<string, unknown> = {};
     if (m.estructura) metadata.estructura = m.estructura;
     if (m.detalles?.length) metadata.detalles = m.detalles;
+    if (m.revision) metadata.revision = m.revision;
     await supabase.from("mensajes").insert({
       conversacion_id: convId,
       rol: m.rol,
@@ -182,6 +185,7 @@ export default function Chat({ session }: { session: Session | null }) {
     if (!supabase || ejecutando) return;
     setConvActiva(id);
     setAnalisis(null);
+    setRevPanel(null);
     setDoc(null);
 
     const { data } = await supabase
@@ -196,6 +200,7 @@ export default function Chat({ session }: { session: Session | null }) {
       tipo: r.tipo,
       estructura: r.metadata?.estructura,
       detalles: r.metadata?.detalles,
+      revision: r.metadata?.revision,
     }));
     setMensajes(cargados);
     setPasos([]);
@@ -228,6 +233,7 @@ export default function Chat({ session }: { session: Session | null }) {
     setDoc(null);
     setPasos([]);
     setAnalisis(null);
+    setRevPanel(null);
     pendienteRef.current = null;
     docPersistidoRef.current = null;
     docMemoriaRef.current = memoriaVacia();
@@ -370,7 +376,9 @@ export default function Chat({ session }: { session: Session | null }) {
       agregarMensaje({
         id: nuevoId(),
         rol: "assistant",
-        contenido: `Rúbrica **${r.nombre}** cargada: ${r.total_items} ítems, ${r.secciones_mapeadas} secciones mapeadas (máx. ${r.puntaje_maximo} pts). La usaré en lugar de la UPAO.`,
+        contenido: `Rúbrica **${r.nombre}** cargada: ${r.total_items} ítems · ${r.secciones_mapeadas} secciones mapeadas`
+          + (r.items_ausentes ? ` · ${r.items_ausentes} criterio(s) que tu proyecto aún no cubre` : "")
+          + ` (máx. ${r.puntaje_maximo} pts). La usaré en lugar de la UPAO.`,
       });
     } catch (exc) {
       agregarMensaje({
@@ -522,7 +530,7 @@ export default function Chat({ session }: { session: Session | null }) {
   // ── Eventos SSE → timeline ─────────────────────────────────────────────────
   function aplicarEvento(
     e: EventoRun,
-    finalizar: (informe?: string, detalles?: AnalisisDetalle[]) => void,
+    finalizar: (informe?: string, detalles?: AnalisisDetalle[], revision?: RevisionCompleta) => void,
   ) {
     setPasos((prev) => {
       const completados = prev.map((p) => ({ ...p, estado: "completado" as const }));
@@ -542,14 +550,26 @@ export default function Chat({ session }: { session: Session | null }) {
         case "nodo":
           return pushCompletado(`${e.label} completado`);
         case "diagnostico":
-          return pushCompletado(`${e.capitulo} analizado — ${e.puntaje}/10`);
+          return pushCompletado(`${e.capitulo} calificado`);
         default:
           return prev;
       }
     });
 
     if (e.tipo === "resultado") {
-      finalizar(String(e.informe_md ?? ""), (e.detalles as AnalisisDetalle[]) ?? []);
+      if (e.resumen_chat) {
+        docMemoriaRef.current.ultima_revision =
+          e.resumen_chat as DocMemoria["ultima_revision"];
+      }
+      const rev = e.calificacion
+        ? ({
+            calificacion: e.calificacion as RevisionCompleta["calificacion"],
+            fortalezas: e.fortalezas as string[] | undefined,
+            debilidades: e.debilidades as string[] | undefined,
+            trazabilidad: e.trazabilidad as RevisionCompleta["trazabilidad"],
+          } as RevisionCompleta)
+        : undefined;
+      finalizar(String(e.informe_md ?? ""), (e.detalles as AnalisisDetalle[]) ?? [], rev);
     }
     if (e.tipo === "cancelado") {
       finalizar("⏹️ Revisión detenida. Lo avanzado no se perdió: pídeme continuar cuando quieras.");
@@ -677,7 +697,11 @@ export default function Chat({ session }: { session: Session | null }) {
 
       runIdRef.current = resp.run_id!;
       let terminado = false;
-      const finalizar = (informe?: string, detalles?: AnalisisDetalle[]) => {
+      const finalizar = (
+        informe?: string,
+        detalles?: AnalisisDetalle[],
+        revision?: RevisionCompleta,
+      ) => {
         if (terminado) return;
         terminado = true;
         registrarDetalles(detalles);
@@ -688,6 +712,7 @@ export default function Chat({ session }: { session: Session | null }) {
               rol: "assistant",
               contenido: informe,
               detalles: detalles && detalles.length > 0 ? detalles : undefined,
+              revision,
             },
             convId,
           );
@@ -848,6 +873,7 @@ export default function Chat({ session }: { session: Session | null }) {
                     key={m.id}
                     mensaje={m}
                     onVerAnalisis={setAnalisis}
+                    onVerRevision={setRevPanel}
                     onAccion={manejarAccion}
                   />
                 ))}
@@ -917,6 +943,7 @@ export default function Chat({ session }: { session: Session | null }) {
         )}
 
         {analisis && <AnalisisPanel detalle={analisis} onCerrar={() => setAnalisis(null)} />}
+        {revPanel && <RevisionCompletaPanel revision={revPanel} onCerrar={() => setRevPanel(null)} />}
         {verRubrica && rubrica && (
           <RubricaTabla rubrica={rubrica} onCerrar={() => setVerRubrica(false)} />
         )}

@@ -13,7 +13,9 @@ from .tesis_store   import (
     recuperar_contexto,
     recuperar_contexto_cruzado,
     recuperar_vista_general,
+    resolver_seccion_semantica,
     obtener_stats_secciones,
+    limpiar_marcas_rag,
 )
 from .library_store import (
     cargar_o_crear_biblioteca,
@@ -35,7 +37,9 @@ __all__ = [
     "recuperar_contexto",
     "recuperar_contexto_cruzado",
     "recuperar_vista_general",
+    "resolver_seccion_semantica",
     "obtener_stats_secciones",
+    "limpiar_marcas_rag",
     "cargar_o_crear_biblioteca",
     "agregar_libro",
     "listar_libros",

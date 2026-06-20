@@ -120,8 +120,13 @@ async def subir_documento(
 
     existente = registry.buscar_documento_por_hash(user_id, pdf_hash)
     if existente:
-        # Ya está en memoria del proceso (mismo instante): conserva su estado,
-        # pero refresca el snapshot de rúbrica/perfil por si cambió en la sesión.
+        # El vector store se reutiliza (mismo PDF ya indexado → no re-vectorizar),
+        # PERO el estado de evaluación es POR CHAT: se reemplaza con la memoria de
+        # ESTE chat (vacía si es nuevo) para no arrastrar lo evaluado en otra
+        # conversación con el mismo proyecto.
+        mejoras.reset_memoria(existente)
+        if memoria_dict:
+            mejoras.restaurar_memoria(existente, memoria_dict)
         _aplicar_recursos_sesion(existente, rubrica_dict, perfil_dict)
         return _documento_a_json(existente, ya_indexado=True)
 
@@ -186,11 +191,16 @@ def _aplicar_recursos_sesion(doc, rubrica_dict: dict, perfil_dict: dict) -> None
         doc.rubrica = rubrica_dict
         doc.rubrica_nombre = rubrica_dict.get("nombre") or doc.rubrica_nombre
 
-    if doc.rubrica and not (doc.rubrica.get("mapa_secciones")) and doc.estructura_toc:
+    # Re-mapear la rúbrica al TOC de ESTE proyecto. El mapa se persiste en el
+    # snapshot, así que una rúbrica reutilizada en otro proyecto traería un mapa
+    # obsoleto: se recalcula si la firma del TOC no coincide (proyecto distinto).
+    if doc.rubrica and doc.rubrica.get("items") and doc.estructura_toc:
         try:
-            from .rubrica_service import mapear_rubrica
-            mapear_rubrica(doc.rubrica, doc.estructura_toc)
-            logger.info("[documentos] Rúbrica mapeada al TOC del proyecto.")
+            from .rubrica_service import mapear_rubrica, _firma_toc, _toc_nombres
+            firma_actual = _firma_toc(_toc_nombres(doc.estructura_toc))
+            if doc.rubrica.get("mapa_toc_firma") != firma_actual:
+                mapear_rubrica(doc.rubrica, doc.estructura_toc)
+                logger.info("[documentos] Rúbrica (re)mapeada al TOC de este proyecto.")
         except Exception:
             logger.exception("[documentos] No se pudo mapear la rúbrica al TOC")
 
@@ -256,6 +266,7 @@ async def subir_rubrica(
         "total_items": rubrica["total_items"],
         "secciones": len(rubrica.get("secciones", {})),
         "secciones_mapeadas": secciones_mapeadas,
+        "items_ausentes": len(rubrica.get("items_ausentes") or []),
         "puntaje_maximo": rubrica["puntaje_maximo"],
     }
 
@@ -390,6 +401,7 @@ def chat(req: ChatRequest, user: dict = Depends(usuario_actual)):
         contexto_previo=req.contexto_previo,
         hay_documento=doc is not None,
         historial=historial,
+        vector_store=doc.vector_store if doc else None,
     )
 
     if intencion["modo"] == "conversacion":
@@ -441,6 +453,10 @@ def chat(req: ChatRequest, user: dict = Depends(usuario_actual)):
         logger.info(f"[chat] Mejoras incorporadas a la memoria RAG: {aplicadas}")
 
     max_iter = max(1, min(3, req.max_iteraciones))
+    # La revisión COMPLETA siempre profundiza con 1 iteración (ahorro de tokens):
+    # califica todos los ítems con el barrido barato y solo profundiza lo más débil.
+    if intencion["modo"] == "completo":
+        max_iter = 1
     run = registry.registrar_run(
         user_id=user.get("sub", "anon"),
         doc_id=doc.doc_id,
@@ -487,6 +503,9 @@ def _eventos_run(run, doc):
                 "cancelado" if (ultimo or {}).get("tipo") == "cancelado"
                 else "completado"
             )
+            # El chat rápido recordará esta evaluación (no pierde el hilo).
+            if run.estado == "completado" and (ultimo or {}).get("resumen_chat"):
+                doc.ultima_revision = ultimo["resumen_chat"]
         else:
             from . import mejoras
 
@@ -514,8 +533,25 @@ def _eventos_run(run, doc):
 
             informe = informe_secciones_md(resumenes)
             run.estado = "completado"
+
+            # El chat rápido recordará esta revisión por secciones.
+            _partes = []
+            for r in resumenes:
+                if r.get("vacia"):
+                    continue
+                p, mx = r.get("puntaje"), r.get("puntaje_max")
+                nota = f"{round(p)}/{mx}" if (p is not None and mx) else "s/n"
+                deb = "; ".join((r.get("puntos_debiles") or [])[:2])
+                _partes.append(f"{r.get('seccion')}: {nota}" + (f" (falta: {deb})" if deb else ""))
+            if _partes:
+                doc.ultima_revision = {
+                    "tipo": "secciones",
+                    "texto": "Última revisión por secciones — " + " · ".join(_partes) + ".",
+                }
+
             yield {"tipo": "resultado", "informe_md": informe,
                    "detalles": [r["detalle"] for r in resumenes if r.get("detalle")],
+                   "resumen_chat": doc.ultima_revision or None,
                    "resumen": {"secciones": [r.get("seccion") for r in resumenes]}}
     except Exception as exc:
         logger.exception(f"[runs] Error en run {run.run_id}")
