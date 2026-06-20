@@ -1,0 +1,12 @@
+# Evita subir node_modules/ y dist/ al construir el frontend en Cloud Build.
+.git/
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db

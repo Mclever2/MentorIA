@@ -1,0 +1,44 @@
+# .gcloudignore — controla QUÉ se sube a Cloud Build (si existe, gcloud IGNORA .gitignore).
+# Clave: NO excluimos chroma_db/ porque ahí vive el índice RAG ya construido
+# (chroma_db/biblioteca/) que se hornea en la imagen del backend.
+
+# Git
+.git/
+.gitignore
+
+# Secretos — JAMÁS subir (las claves se pasan con --set-env-vars/--set-secrets)
+.env
+.env.*
+!.env.example
+
+# Python local
+__pycache__/
+**/__pycache__/
+*.py[cod]
+venv/
+.venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Frontend — se construye desde web/ por separado; la imagen del backend no lo necesita
+node_modules/
+dist/
+web/
+
+# Entradas pesadas que NO van a la imagen (el índice ya está construido)
+books/
+
+# Artefactos de ejecución
+outputs/
+logs/
+*.log
+
+# Editor / SO
+.claude/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

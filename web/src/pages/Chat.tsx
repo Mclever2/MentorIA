@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Session } from "@supabase/supabase-js";
 import { motion } from "framer-motion";
-import { BookOpenCheck, FileSearch, Layers, ListChecks, Loader2 } from "lucide-react";
+import { BookOpenCheck, FileSearch, Layers, ListChecks, Loader2, Menu } from "lucide-react";
 
 import AnalisisPanel from "@/components/chat/AnalisisPanel";
 import ChatInput from "@/components/chat/ChatInput";
@@ -82,6 +82,7 @@ export default function Chat({ session }: { session: Session | null }) {
   const [pasos, setPasos] = useState<PasoProgreso[]>([]);
   const [iteraciones, setIteraciones] = useState(2);
   const [analisis, setAnalisis] = useState<AnalisisDetalle | null>(null);
+  const [navAbierto, setNavAbierto] = useState(false); // cajón del sidebar en móvil
 
   // Rúbrica + perfil de universidad (snapshot por chat, default del usuario)
   const [rubrica, setRubrica] = useState<RubricaPersist | null>(null);
@@ -734,6 +735,8 @@ export default function Chat({ session }: { session: Session | null }) {
   return (
     <div className="h-screen flex overflow-hidden">
       <Sidebar
+        abierto={navAbierto}
+        onCerrar={() => setNavAbierto(false)}
         email={session?.user.email ?? null}
         conversaciones={conversaciones}
         conversacionActiva={convActiva}
@@ -761,8 +764,27 @@ export default function Chat({ session }: { session: Session | null }) {
         }
       />
 
+      {navAbierto && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+          onClick={() => setNavAbierto(false)}
+          aria-hidden
+        />
+      )}
+
       <main className="flex-1 flex flex-col relative">
         <FondoLiquido intenso={ejecutando} />
+
+        <div className="md:hidden flex items-center gap-2 px-4 h-14 shrink-0 border-b border-border bg-card/60 backdrop-blur-xl z-10">
+          <button
+            onClick={() => setNavAbierto(true)}
+            className="p-2 -ml-2 rounded-xl hover:bg-muted"
+            aria-label="Abrir menú"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <span className="font-semibold">MentorIA</span>
+        </div>
 
         {vacio ? (
           <div className="flex-1 flex flex-col items-center justify-center px-6">

@@ -62,7 +62,7 @@ export default function AnalisisPanel({
             </div>
           </div>
 
-          <div className="mt-4 bg-muted rounded-xl p-1 grid grid-cols-5 text-[13px] font-medium">
+          <div className="mt-4 bg-muted rounded-xl p-1 grid grid-cols-5 text-[11px] md:text-[13px] font-medium">
             {TABS.map((t) => (
               <button
                 key={t.id}
