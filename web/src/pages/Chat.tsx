@@ -85,6 +85,7 @@ export default function Chat({ session }: { session: Session | null }) {
   const [iteraciones, setIteraciones] = useState(1);
   const [analisis, setAnalisis] = useState<AnalisisDetalle | null>(null);
   const [revPanel, setRevPanel] = useState<RevisionCompleta | null>(null);
+  const [navAbierto, setNavAbierto] = useState(false); // cajón del sidebar en móvil
 
   // Rúbrica + perfil de universidad (snapshot por chat, default del usuario)
   const [rubrica, setRubrica] = useState<RubricaPersist | null>(null);
