@@ -15,10 +15,18 @@ from .llm import llm_rapido, extraer_json
 
 logger = logging.getLogger(__name__)
 
-# Verbo EXPLÍCITO de evaluación → es una orden de lanzar la red (no una pregunta).
+# Verbo EXPLÍCITO de evaluación → es una orden de lanzar la red GRANDE (no una pregunta).
+# OJO: "corregir" y "mejorar" NO van aquí — esos los atiende el mini-grafo de debate.
 _RE_ACCION_EVAL = re.compile(
-    r"\b(eval[uú]a\w*|evaluar|calific\w*|revis\w*|corrig\w*|corrije\w*|"
-    r"mejora\w*|mejorar|audit\w*|punt[uú]a\w*|puntuar|analiz\w*)\b",
+    r"\b(eval[uú]a\w*|evaluar|calific\w*|revis\w*|"
+    r"audit\w*|punt[uú]a\w*|puntuar|analiz\w*)\b",
+    re.I,
+)
+
+# Verbo de MEJORA/REDACCIÓN → mini-grafo de debate rápido (no lanza la red grande).
+_RE_MEJORA = re.compile(
+    r"\b(corrig\w*|corrije\w*|mejor\w*|redact\w*|reescrib\w*|"
+    r"reformul\w*|recomend\w*|lineamient\w*)\b",
     re.I,
 )
 
@@ -104,6 +112,16 @@ def interpretar_mensaje(
             modo = "completo"
         else:
             modo = "conversacion"
+
+    # Mini-grafo de debate rápido: petición de MEJORAR/CORREGIR/REDACTAR/lineamientos
+    # SIN orden explícita de evaluar (p. ej. «corrige mi planteamiento», «¿cómo mejoro
+    # mi título?», «dame lineamientos para…»). No lanza la red grande; requiere documento.
+    # Si además pide evaluar («revisa y mejora»), gana la evaluación → sigue al grafo grande.
+    if _RE_MEJORA.search(mensaje) and not _RE_ACCION_EVAL.search(mensaje):
+        if hay_documento:
+            logger.info("[intent] Petición de mejora → modo 'mejora' (mini-grafo de debate)")
+            return {"modo": "mejora", "secciones": []}
+        modo = "conversacion"
 
     # Red de seguridad: una PREGUNTA sin verbo explícito de evaluación nunca debe
     # lanzar la red (p. ej. «¿sabes cuál es mi operacionalización?» es una consulta,

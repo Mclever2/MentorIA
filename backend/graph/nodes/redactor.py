@@ -77,13 +77,22 @@ REGLAS PARA `texto_redactado`:
   referencias de otras secciones del proyecto). Si falta un dato, usa marcadores como
   `[INSERTAR DATO ESTADÍSTICO ACÁ]` o redacta de forma cualitativa con base en la realidad del proyecto.
 - Mantén el registro académico formal y respeta la numeración y estructura de la sección.
-- TABLAS (p. ej. operacionalización de variables): el texto se muestra en un chat, así que las
-  tablas complejas se ven mal. Si necesitas presentar una tabla:
-  * Hazla en Markdown GFM VÁLIDO y SIMPLE: una fila por línea, fila de encabezado seguida de la
-    fila separadora `|---|---|`, y NUNCA dejes celdas vacías para simular celdas combinadas
-    (repite el valor de la variable/dimensión en cada fila que lo necesite).
-  * Si la tabla tendría muchas columnas o sería muy ancha, NO uses tabla: preséntala como una
-    LISTA con viñetas anidadas (una viñeta por variable y sub-viñetas con sus campos).
+- OPERACIONALIZACIÓN DE VARIABLES: es una tabla ANCHA (variable, definición conceptual, definición
+  operacional, dimensiones, indicadores, ítems, escala) que se ROMPE en el chat. NUNCA la pongas como
+  tabla ni copies la tabla cruda del PDF (con tabulaciones). Preséntala SIEMPRE como LISTA con viñetas
+  anidadas, con EXACTAMENTE el MISMO formato para TODAS las variables (no una en tabla y otra en lista):
+    - **Variable independiente: <nombre>**
+      - Definición conceptual: …
+      - Definición operacional: …
+      - Dimensiones: …
+      - Indicadores: …
+      - Ítems: …
+      - Escala de medición: …
+    - **Variable dependiente: <nombre>**
+      - (las mismas sub-viñetas)
+- OTRAS TABLAS: si de verdad necesitas una y es angosta, hazla en Markdown GFM VÁLIDO (fila de
+  encabezado + fila separadora `|---|---|` + filas con el MISMO número de columnas y celdas, sin
+  mezclar tabulaciones con pipes); si tendría muchas columnas, usa la lista con viñetas anidadas.
 - Solo si el enfoque es CUANTITATIVO, para el OBJETIVO GENERAL usa la forma:
   [verbo infinitivo] + [variable independiente] + "en" + [variable dependiente] + "de" +
   [unidad de análisis] + "en" + [horizonte temporal]; los específicos derivan de él, cada uno en
@@ -393,14 +402,17 @@ def _palabras_titulo(texto: str) -> int:
 
 
 def _instruccion_nucleo(plan: dict | None) -> str:
-    """Instrucción del modo NÚCLEO según el plan (qué reescribir vs solo observar).
+    """Instrucción del modo NÚCLEO: MEJORAR de verdad lo que no es 5/5 y JUSTIFICAR lo perfecto.
 
-    `plan = {"reescribir": [secciones], "observar": [{"seccion","puntaje","maximo","razones"}]}`.
-    Sin plan → comportamiento clásico: reescribir todos los subpuntos.
+    `plan = {"reescribir": [secciones (nota < máx)],
+             "observar":   [{"seccion","puntaje","maximo","razones"} (ya en 5/5)],
+             "razones_reescribir": {seccion: [razones]}}`.
+    Sin plan → reescribir todos los subpuntos.
     """
     plan = plan or {}
     reescribir = plan.get("reescribir") or []
     observar   = plan.get("observar") or []
+    razones_re = plan.get("razones_reescribir") or {}
 
     if not reescribir and not observar:
         return (
@@ -411,27 +423,55 @@ def _instruccion_nucleo(plan: dict | None) -> str:
             "ellos y con el tipo/diseño, la población y el método; no fuerces lo que el tipo no requiere."
         )
 
-    lin_re = "\n".join(f"- {s}" for s in reescribir) or "- (ninguno: ya están en nivel)"
+    lin_re = []
+    for s in reescribir:
+        falta = "; ".join(r for r in (razones_re.get(s) or []) if r)
+        lin_re.append(f"- {s}" + (f" → qué cerrar: {falta}" if falta else ""))
+    lin_re_txt = "\n".join(lin_re) or "- (ninguno: todos están en 5/5)"
+
     lin_obs = []
     for o in observar:
-        rz = "; ".join(r for r in (o.get("razones") or []) if r) or "según la calificación de la rúbrica"
         pj, mx = o.get("puntaje"), o.get("maximo")
-        nota = f" (nota {pj}/{mx})" if pj is not None and mx else ""
-        lin_obs.append(f"- {o.get('seccion')}{nota}: {rz}")
+        nota = f"{pj}/{mx}" if pj is not None and mx else "máximo"
+        lin_obs.append(f"- {o.get('seccion')} (ya en {nota})")
     lin_obs_txt = "\n".join(lin_obs) or "- (ninguno)"
 
+    # Feedback de la ITERACIÓN ANTERIOR (núcleo iterativo): ítems que aún no llegaron al
+    # máximo, con el porqué, para que esta vuelta se acerque más (parte del texto ya mejorado).
+    feedback = plan.get("feedback_iteracion") or []
+    if feedback:
+        lin_fb = "\n".join(
+            f"- Ítem {f.get('numero')}: {f.get('criterio', '')} — sigue por debajo del máximo porque: "
+            f"{f.get('razon') or 'falta evidenciarlo plenamente'}"
+            for f in feedback
+        )
+        bloque_fb = (
+            "\n\nITERACIÓN PREVIA — estos ítems AÚN NO llegaron al máximo. Estás partiendo del texto que YA "
+            "mejoraste; analiza POR QUÉ no llegaron y mejóralos ESPECÍFICAMENTE en esta versión, sin deshacer "
+            "lo que ya estaba bien:\n" + lin_fb
+        )
+    else:
+        bloque_fb = ""
+
     return (
-        "Estás trabajando el NÚCLEO DE COHERENCIA del proyecto. Tienes DOS tareas DISTINTAS y "
-        "todo va dentro de `texto_redactado`, cada subpunto bajo su encabezado markdown `### <nombre>`:\n\n"
-        "A) REESCRIBE (texto mejorado COMPLETO, listo para entregar) SOLO estos subpuntos prioritarios:\n"
-        f"{lin_re}\n\n"
-        "B) NO reescribas los demás. Para CADA uno de estos escribe ÚNICAMENTE una OBSERVACIÓN breve "
-        "(1-2 frases) que EXPLIQUE por qué tiene su nota actual (qué cumple y qué le falta). "
-        "NO redactes contenido de tesis para ellos; empieza la línea con «Observación:»:\n"
+        "Estás trabajando el NÚCLEO DE COHERENCIA (título · problema · objetivos · hipótesis · "
+        "variables). TODO va en `texto_redactado`, cada subpunto bajo su encabezado markdown "
+        "`### <nombre>` y conteniendo SOLO su propio contenido (no mezcles subpuntos ni agregues texto ajeno).\n\n"
+        "A) MEJÓRALOS DE VERDAD (su nota NO es la máxima). Entrega el texto del subpunto YA MEJORADO, "
+        "listo para entregar, APLICANDO los cambios (no solo describiéndolos), incluso los menores "
+        "(mayúsculas/minúsculas, tildes, puntuación, una palabra más precisa). Cierra exactamente las "
+        "brechas indicadas:\n"
+        f"{lin_re_txt}\n\n"
+        "B) NO los reescribas: YA están en la nota máxima. Para cada uno, bajo su encabezado, escribe una "
+        "línea «✓ Ya cumple (nota)» y FUNDAMENTA, apoyándote en los LIBROS DE METODOLOGÍA del CONTEXTO RAG, "
+        "POR QUÉ cumple el criterio (menciona la fuente de forma natural). No inventes citas ni autores:\n"
         f"{lin_obs_txt}\n\n"
-        "En AMBOS casos respeta la TRAZABILIDAD entre subpuntos y con el tipo/diseño, la población y el "
-        "método; no fuerces lo que el tipo no requiere. En `recomendaciones` resume las incongruencias "
-        "globales de coherencia."
+        "En `recomendaciones` entrega una LISTA NUMERADA de los CAMBIOS CONCRETOS que aplicaste en cada "
+        "subpunto reescrito (p. ej. «1. Título: se precisó “X” por “Y” para articular la relación entre "
+        "variables; 2. Problema: se añadió la conexión entre los factores y su impacto»). No incluyas en esa "
+        "lista los subpuntos que ya estaban en 5/5. Respeta la TRAZABILIDAD entre subpuntos y con el "
+        "tipo/diseño; no fuerces lo que el tipo no requiere."
+        + bloque_fb
     )
 
 

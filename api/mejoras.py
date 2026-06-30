@@ -26,6 +26,15 @@ def registrar_resultado(doc, seccion: str, resumen: dict) -> None:
         doc.mejoras[seccion] = {"texto": texto, "aplicada": False}
 
 
+def registrar_mejora_chat(doc, seccion: str, texto: str) -> None:
+    """Guarda como PENDIENTE una mejora hecha en el CHAT (mini-debate), SIN marcar la
+    sección como evaluada (no fue una revisión formal). El estudiante decidirá al evaluar
+    si la incorpora a la memoria RAG en lugar del texto original."""
+    texto = (texto or "").strip()
+    if seccion and texto:
+        doc.mejoras[seccion] = {"texto": texto, "aplicada": False, "origen": "chat"}
+
+
 def pendientes(doc) -> list[str]:
     return [s for s, m in doc.mejoras.items() if not m.get("aplicada")]
 
@@ -87,10 +96,14 @@ def restaurar_memoria(doc, memoria: dict) -> None:
     )
 
 
-def aplicar_pendientes(doc) -> list[str]:
-    """Aplica todas las mejoras pendientes al vector store. Devuelve las aplicadas."""
+def aplicar_pendientes(doc, secciones: list[str] | None = None) -> list[str]:
+    """Aplica mejoras pendientes al vector store. Si `secciones` se indica, solo aplica
+    esas; si no, todas. Devuelve las aplicadas."""
+    objetivo = set(secciones) if secciones is not None else None
     aplicadas: list[str] = []
     for seccion in pendientes(doc):
+        if objetivo is not None and seccion not in objetivo:
+            continue
         try:
             _reemplazar_seccion(doc, seccion, doc.mejoras[seccion]["texto"])
             doc.mejoras[seccion]["aplicada"] = True

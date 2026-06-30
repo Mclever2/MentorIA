@@ -466,6 +466,94 @@ def resolver_seccion_semantica(
     return None
 
 
+def recuperar_con_vecinos(
+    vector_store: Chroma,
+    consulta: str,
+    seccion: str | None = None,
+    k: int = 5,
+    ventana: int = 1,
+    max_chunks: int = 14,
+) -> str:
+    """Top-k por similitud + expansión de vecinos ±`ventana` de la MISMA sección.
+
+    Reensambla oraciones cortadas entre fragmentos: por cada chunk relevante trae
+    también el anterior y el siguiente (en orden de lectura, vía `chunk_index`
+    global). Así una pregunta de formulación partida entre dos chunks no se da por
+    ausente. Si se indica `seccion`, restringe la búsqueda a esa sección (o sus
+    subsecciones). Acota el total a `max_chunks` para no inflar el prompt.
+
+    Devuelve el texto con marcadores `[Fragmento N]`; usa `limpiar_marcas_rag`
+    si necesitas el texto crudo.
+    """
+    if vector_store is None or not (consulta or "").strip():
+        return ""
+
+    try:
+        hits = vector_store.similarity_search(consulta, k=max(k, 1))
+    except Exception as exc:
+        logger.warning(f"[vecinos] similarity_search falló: {exc}")
+        return ""
+    if not hits:
+        return ""
+
+    if seccion:
+        pref = _extraer_prefijo(seccion)
+        filtrados = [
+            d for d in hits
+            if d.metadata.get("seccion") == seccion
+            or (pref and _es_subseccion(d.metadata.get("seccion", ""), pref))
+        ]
+        if filtrados:
+            hits = filtrados
+
+    # Índice completo del documento: chunk_index es global y refleja el orden de
+    # lectura, así que (sección, índice±1) es el fragmento contiguo de la misma sección.
+    try:
+        bruto = vector_store._collection.get(include=["documents", "metadatas"])
+        documentos = bruto.get("documents") or []
+        metadatas = bruto.get("metadatas") or []
+    except Exception as exc:
+        logger.warning(f"[vecinos] get() falló: {exc}")
+        documentos, metadatas = [], []
+
+    por_idx: dict[int, tuple[str, str]] = {}
+    for texto, meta in zip(documentos, metadatas):
+        ci = meta.get("chunk_index")
+        if ci is not None:
+            por_idx[ci] = (meta.get("seccion", ""), texto)
+
+    seleccion: set[int] = set()
+    for d in hits:
+        ci = d.metadata.get("chunk_index")
+        sec = d.metadata.get("seccion", "")
+        if ci is None:
+            continue
+        seleccion.add(ci)
+        for off in range(1, ventana + 1):
+            for vecino in (ci - off, ci + off):
+                if vecino in por_idx and por_idx[vecino][0] == sec:
+                    seleccion.add(vecino)
+
+    if not seleccion:
+        # Sin chunk_index utilizable: devolver los propios hits en orden de aparición.
+        docs = hits[:max_chunks]
+        return "\n\n---\n\n".join(
+            f"[Fragmento {i + 1}]\n{d.page_content}" for i, d in enumerate(docs)
+        )
+
+    ordenados = sorted(seleccion)[:max_chunks]
+    partes = []
+    for i, ci in enumerate(ordenados):
+        sec, texto = por_idx.get(ci, ("", ""))
+        etiqueta = f"[Fragmento {i + 1}" + (f" · {sec}]" if sec else "]")
+        partes.append(f"{etiqueta}\n{texto}")
+    logger.info(
+        f"[vecinos] '{consulta[:40]}…' → {len(ordenados)} fragmentos "
+        f"(de {len(hits)} hits, ventana ±{ventana})"
+    )
+    return "\n\n---\n\n".join(partes)
+
+
 _CONSULTAS_CRUZADAS: dict[str, str] = {
     "Título y delimitación":  "título investigación variables independiente dependiente espacio tiempo",
     "Problema central":       "problema central formulación pregunta investigación planteamiento realidad",

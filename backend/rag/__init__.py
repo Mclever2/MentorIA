@@ -11,6 +11,7 @@ from .rubric_parser  import parse_rubrica_pdf, rubrica_a_texto_prompt
 from .tesis_store   import (
     construir_vector_store,
     recuperar_contexto,
+    recuperar_con_vecinos,
     recuperar_contexto_cruzado,
     recuperar_vista_general,
     resolver_seccion_semantica,
@@ -35,6 +36,7 @@ __all__ = [
     "rubrica_a_texto_prompt",
     "construir_vector_store",
     "recuperar_contexto",
+    "recuperar_con_vecinos",
     "recuperar_contexto_cruzado",
     "recuperar_vista_general",
     "resolver_seccion_semantica",

@@ -416,6 +416,32 @@ def chat(req: ChatRequest, user: dict = Depends(usuario_actual)):
         )
         return {"tipo": "conversacion", "respuesta": respuesta}
 
+    if intencion["modo"] == "mejora":
+        # Mini-grafo de debate rápido (mejorar/corregir/redactar). Devuelve una
+        # respuesta de chat simple, SIN el panel de la red de evaluación.
+        from .debate_rapido import responder_mejora_rapida
+        from .deps import get_biblioteca
+
+        res = responder_mejora_rapida(
+            mensaje=req.mensaje,
+            historial=historial,
+            doc=doc,
+            biblioteca=get_biblioteca(),
+        )
+        respuesta = res["respuesta"]
+        sec = res.get("seccion")
+        texto = (res.get("texto_mejorado") or "").strip()
+        # Guarda la mejora de sección como PENDIENTE (sin marcar evaluada): si luego dices
+        # «evalúa mi <sección>», la red puede calificar TU mejora en vez del texto original.
+        if doc is not None and sec and len(texto) > 200:
+            mejoras.registrar_mejora_chat(doc, sec, texto)
+            respuesta += (
+                f"\n\n---\n💡 Guardé esta versión mejorada de **{sec}**. Si quieres que la "
+                f"evaluación formal la use en lugar de tu texto original, dime «evalúa mi {sec}» "
+                "y te preguntaré antes de aplicarla."
+            )
+        return {"tipo": "conversacion", "respuesta": respuesta}
+
     objetivo = intencion["secciones"] if intencion["modo"] == "secciones" else []
 
     ya_evaluadas = [s for s in objetivo if s in doc.evaluadas]
@@ -433,30 +459,37 @@ def chat(req: ChatRequest, user: dict = Depends(usuario_actual)):
 
     pend = mejoras.pendientes(doc)
     pend_otras = [s for s in pend if s not in objetivo]
-    if pend_otras and req.decision_mejoras is None:
-        lista = ", ".join(f"**{s}**" for s in pend_otras)
+    # Mejoras del CHAT para las secciones que se van a evaluar: si las aplico, la red
+    # evalúa TU versión mejorada del chat (no el original). Las del propio grafo NO se
+    # reaplican sobre su sección (la red las reescribe igual desde el original).
+    pend_chat_obj = [
+        s for s in pend
+        if s in objetivo and (doc.mejoras.get(s, {}).get("origen") == "chat")
+    ]
+    pend_ofrecer = pend_otras + pend_chat_obj
+    if pend_ofrecer and req.decision_mejoras is None:
+        lista = ", ".join(f"**{s}**" for s in pend_ofrecer)
         return {
             "tipo": "confirmacion",
             "subtipo": "aplicar_mejoras",
-            "secciones": pend_otras,
+            "secciones": pend_ofrecer,
             "mensaje": (
-                f"Tengo texto corregido de {lista} que aún no incorporé a mi memoria. "
-                "¿Lo uso en lugar del texto original de tu PDF para esta revisión? "
-                "(Tu PDF no se modifica — solo lo que yo recuerdo del proyecto. "
-                "Se incorpora únicamente el texto corregido, no las sugerencias.)"
+                f"Tengo texto mejorado de {lista} que aún no incorporé a mi memoria "
+                "(de tu chat o de una revisión previa). ¿Lo uso en lugar del texto original "
+                "de tu PDF para esta evaluación? (Tu PDF no se modifica — solo lo que yo "
+                "recuerdo del proyecto. Se incorpora únicamente el texto corregido, no las sugerencias.)"
             ),
         }
 
     aplicadas: list[str] = []
-    if req.decision_mejoras == "aplicar" and pend:
-        aplicadas = mejoras.aplicar_pendientes(doc)
+    if req.decision_mejoras == "aplicar" and pend_ofrecer:
+        aplicadas = mejoras.aplicar_pendientes(doc, pend_ofrecer)
         logger.info(f"[chat] Mejoras incorporadas a la memoria RAG: {aplicadas}")
 
     max_iter = max(1, min(3, req.max_iteraciones))
-    # La revisión COMPLETA siempre profundiza con 1 iteración (ahorro de tokens):
-    # califica todos los ítems con el barrido barato y solo profundiza lo más débil.
-    if intencion["modo"] == "completo":
-        max_iter = 1
+    # La revisión COMPLETA usa por defecto 1 iteración (el control del frontend arranca
+    # en 1). Si el usuario SUBE el número, SOLO el núcleo del grafo itera hasta ese valor
+    # (con corte al 90%); el barrido por ítem y el LLM-as-judge siguen siendo de 1 pasada.
     run = registry.registrar_run(
         user_id=user.get("sub", "anon"),
         doc_id=doc.doc_id,

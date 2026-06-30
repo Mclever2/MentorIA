@@ -297,21 +297,45 @@ def _diagnosticar_unidad(llm, u: dict, rubrica: dict | None, enfoque: str, escal
     }
 
 
+_PROMPT_REGRADE = """Eres un auditor académico. Vas a calificar una versión MEJORADA del texto de un
+proyecto de tesis, reescrita expresamente para cumplir mejor la rúbrica. Califica CADA ítem por cuán
+bien el TEXTO ACTUAL satisface el criterio, de 0 a {escala}. Da el MÁXIMO ({escala}) cuando el criterio
+se cumple plenamente en el texto; NO exijas más de lo que el ítem pide ni penalices por estilo.
+Estás midiendo la MEJORA: si el texto ahora cumple el criterio, refléjalo en la nota.
+
+{enfoque}
+
+Para ítems RELACIONALES (coherencia con otra parte del proyecto: «el objetivo guarda relación con el
+problema», «las hipótesis se relacionan con el problema», etc.), APÓYATE en el CONTEXTO DE COHERENCIA
+para verificar esa relación; NO penalices porque esa parte viva en otra sección del proyecto.
+
+Si un ítem exige algo que el ENFOQUE no requiere, ponle "aplica": false y no lo penalices.
+
+Responde SOLO con JSON válido:
+{{"items": [{{"numero": <int>, "puntaje": <0-{escala}>, "aplica": true, "razon": "qué cumple ahora el texto; si aún no es el máximo, qué falta concretamente"}}]}}
+
+CONTEXTO DE COHERENCIA (otras secciones del proyecto — solo para ítems relacionales):
+{coherencia}
+
+ÍTEMS A CALIFICAR:
+{criterios}
+"""
+
+
 def _recalificar(llm, items: list[dict], texto: str, enfoque: str, escala: int,
                  coherencia: str = "") -> dict:
     """Re-puntúa una lista de ítems (con número int) contra un TEXTO (1 llamada).
 
-    Se usa para re-calificar los subpuntos REESCRITOS del núcleo contra el texto
-    mejorado, de modo que la nota refleje la mejora. Devuelve {num: {puntaje, aplica, razon}}.
+    Se usa para re-calificar el núcleo contra el texto MEJORADO, de modo que la nota
+    refleje la mejora. Devuelve {num: {puntaje, aplica, razon}}.
     """
     if not items or not (texto or "").strip():
         return {}
     criterios = "\n".join(f"{it['numero']:02d}. {it.get('descripcion', '')}" for it in items)
     try:
         resp = llm.invoke([
-            SystemMessage(content=_PROMPT_BARRIDO.format(
+            SystemMessage(content=_PROMPT_REGRADE.format(
                 escala=escala, enfoque=enfoque, criterios=criterios,
-                seccion="Subpuntos reescritos del núcleo", nota_ventana="",
                 coherencia=coherencia or "(sin contexto)",
             )),
             HumanMessage(content=texto[: _MAX_CHARS_VENTANA * 2]),
@@ -372,9 +396,25 @@ def _consolidar_calificacion(diagnosticos: list[dict], items_all: list[dict],
                               "secciones": secs_item.get(num, []), "puntaje": None,
                               "maximo": escala, "estado": "na", "razon": razon})
             continue  # N/A por tipo: no cuenta al máximo
-        puntajes = [e["puntaje"] for e in evs if e.get("aplica", True)]
-        p = round(sum(puntajes) / len(puntajes)) if puntajes else 0
-        razon = next((e.get("razon") for e in evs if e.get("razon")), "")
+        # Un ítem mapeado a VARIAS secciones se evalúa en cada una; donde su contenido
+        # NO vive saca 0/bajo. Promediar (lo anterior) hundía la nota y, encima, se
+        # mostraba la razón de OTRA sección → nota y texto se contradecían. Ahora se
+        # representa por la EVIDENCIA MÁS FUERTE (mayor puntaje) y se usa SU propia
+        # razón, de modo que puntaje y observación siempre coincidan.
+        aplicables = [e for e in evs if e.get("aplica", True)]
+        mejor = max(aplicables, key=lambda e: (e.get("puntaje", 0), 1 if e.get("razon") else 0))
+        p = mejor.get("puntaje", 0)
+        razon = mejor.get("razon") or next((e.get("razon") for e in aplicables if e.get("razon")), "")
+        if not razon:
+            secs = ", ".join(secs_item.get(num, [])) or "—"
+            if p <= 0:
+                razon = (f"No se encontró contenido que evidencie este criterio en las "
+                         f"secciones evaluadas ({secs}).")
+            elif p >= escala:
+                razon = "Cumple plenamente el criterio."
+            else:
+                razon = ("Cumple parcialmente; faltan aspectos por desarrollar para "
+                         "alcanzar el puntaje máximo.")
         items_out.append({"numero": num, "descripcion": desc.get(num, ""),
                           "secciones": secs_item.get(num, []), "puntaje": p, "maximo": escala,
                           "estado": "ok" if p >= umbral_ok else "bajo", "razon": razon})
@@ -443,6 +483,141 @@ def _es_core(nombre: str) -> bool:
     return any(p.search(nombre or "") for p in _CORE_PATRONES)
 
 
+# Conceptos que SÍ son del núcleo (sujeto del ítem): título · problema · objetivos ·
+# hipótesis · variables. Amplios para cubrir las frases de cualquier rúbrica de tesis.
+_NUCLEO_CONCEPTO = [
+    re.compile(r"t[íi]tulo", re.I),
+    re.compile(r"(problema|planteamiento|formulaci[óo]n|pregunta de investigaci)", re.I),
+    re.compile(r"objetivo", re.I),
+    re.compile(r"(hip[óo]tesis|\bsupuesto)", re.I),
+    re.compile(r"(variable|operacionaliz)", re.I),
+    re.compile(r"matriz de (consistencia|coherencia)", re.I),
+]
+
+# Conceptos que NO son del núcleo. Si el ítem trata PRINCIPALMENTE de esto (aparece
+# ANTES que cualquier concepto del núcleo), queda fuera aunque mencione de pasada una
+# variable o el problema. Cubre las demás familias de una rúbrica de tesis: marco
+# teórico/antecedentes, citas/referencias, términos, método/diseño/población/
+# instrumentos/análisis y aspectos administrativos.
+_NO_NUCLEO_CONCEPTO = [
+    re.compile(r"(cita|citad|citan|referencia|bibliogr[áa]f)", re.I),
+    re.compile(r"(antecedent|bases? te[óo]ric|marco te[óo]ric)", re.I),
+    re.compile(r"(t[ée]rmino|glosario)", re.I),
+    re.compile(r"\bautor", re.I),
+    re.compile(r"(norma[s]? internacional|\bAPA\b|vancouver|harvard|\bISO\b)", re.I),
+    re.compile(r"(poblaci[óo]n|muestra|muestreo)", re.I),
+    re.compile(r"(instrumento|recolecci[óo]n de datos)", re.I),
+    re.compile(r"(procedimiento|ejecuci[óo]n del estudio)", re.I),
+    re.compile(r"(t[ée]cnica|procesamiento|an[áa]lisis de datos)", re.I),
+    re.compile(r"(m[ée]todo|dise[ñn]o|tipo de investigaci|esquema|gr[áa]fico)", re.I),
+    re.compile(r"(cronograma|presupuesto|recurso|financ|administrativ)", re.I),
+]
+
+
+def _primera_coincidencia(texto: str, patrones: list) -> int | None:
+    """Posición de la PRIMERA coincidencia de cualquiera de los patrones (o None)."""
+    pos = None
+    for p in patrones:
+        m = p.search(texto or "")
+        if m and (pos is None or m.start() < pos):
+            pos = m.start()
+    return pos
+
+
+def _es_item_core(descripcion: str) -> bool:
+    """¿El ÍTEM evalúa un elemento del NÚCLEO (título·problema·objetivos·hipótesis·variables)?
+
+    Robusto para CUALQUIER rúbrica: se decide por el SUJETO del ítem (su descripción),
+    no por el grupo de la rúbrica (que el parser a veces agrupa mal) ni por las secciones
+    del proyecto. Gana el concepto que aparece PRIMERO:
+      - «El problema… de las variables (antecedentes)» → núcleo (su sujeto es el problema).
+      - «Las citas… concordantes con las variables»    → NO (su sujeto son las citas),
+        aunque ambos mencionen «variables».
+    Si el ítem no nombra ningún concepto del núcleo, queda fuera.
+
+    Como solo depende de la descripción del ítem (no del proyecto), el núcleo tiene el
+    MISMO conjunto de ítems ante la misma rúbrica, en cualquier proyecto.
+    """
+    txt = descripcion or ""
+    nucleo_pos = _primera_coincidencia(txt, _NUCLEO_CONCEPTO)
+    if nucleo_pos is None:
+        return False
+    fuera_pos = _primera_coincidencia(txt, _NO_NUCLEO_CONCEPTO)
+    return fuera_pos is None or nucleo_pos < fuera_pos
+
+
+_PROMPT_CLASIF_NUCLEO = """Eres un metodólogo. Te doy los ítems de una rúbrica de evaluación de
+proyectos de tesis. Marca SOLO los ítems que evalúan DIRECTAMENTE uno de estos elementos del
+NÚCLEO DE COHERENCIA del proyecto:
+- el TÍTULO del proyecto
+- el PROBLEMA (planteamiento, descripción, delimitación, formulación, pregunta de investigación)
+- los OBJETIVOS (general o específicos)
+- las HIPÓTESIS o supuestos
+- las VARIABLES o su operacionalización (dimensiones / indicadores)
+- la MATRIZ DE CONSISTENCIA (alineación entre problema, objetivos, hipótesis y variables)
+
+NO marques los ítems sobre: antecedentes, marco/bases teóricas, definición de términos, citas,
+referencias bibliográficas, autores, normas de citación, importancia/justificación/relevancia,
+línea de investigación, tipo/método/diseño de investigación, esquema del diseño, población/muestra,
+instrumentos, procedimiento, técnicas de procesamiento o análisis de datos, cronograma, presupuesto,
+recursos, financiamiento ni aspectos administrativos. AUNQUE el ítem mencione de pasada un elemento
+del núcleo, fíjate en lo que el ítem evalúa REALMENTE (p. ej. «las citas son concordantes con las
+variables» NO es del núcleo: su sujeto son las citas).
+
+Responde SOLO con JSON válido: {{"nucleo": [<números de ítem que SÍ son del núcleo>]}}
+
+ÍTEMS DE LA RÚBRICA:
+{items}
+"""
+
+
+def _items_nucleo(items_all: list[dict], rubrica: dict | None, llm) -> set[int]:
+    """Números de ítem que pertenecen al NÚCLEO — robusto para CUALQUIER rúbrica.
+
+    Rúbrica SUBIDA → clasificación por LLM (entiende el significado, no las palabras),
+    cacheada en `rubrica["_nucleo_nums"]` (1 llamada por rúbrica). Si la llamada falla,
+    cae al heurístico por descripción. Sin rúbrica subida (UPAO por defecto) → heurístico
+    directamente (ya está afinado para ella).
+    """
+    if not items_all:
+        return set()
+
+    def _heuristico() -> set[int]:
+        return {it["numero"] for it in items_all if _es_item_core(it.get("descripcion", ""))}
+
+    if rubrica is None:
+        return _heuristico()
+    if rubrica.get("_nucleo_nums") is not None:
+        return set(rubrica["_nucleo_nums"])
+
+    listado = "\n".join(f"{it['numero']:02d}. {it.get('descripcion', '')}" for it in items_all)
+    validos = {it["numero"] for it in items_all}
+    nums: set[int] = set()
+    try:
+        resp = llm.invoke([
+            SystemMessage(content=_PROMPT_CLASIF_NUCLEO.format(items=listado)),
+            HumanMessage(content="Clasifica los ítems del núcleo."),
+        ])
+        for n in (extraer_json(resp.content) or {}).get("nucleo") or []:
+            try:
+                v = int(n)
+            except (TypeError, ValueError):
+                continue
+            if v in validos:
+                nums.add(v)
+    except Exception as exc:
+        logger.warning(f"[núcleo] Clasificación LLM falló: {exc}")
+
+    if nums:
+        rubrica["_nucleo_nums"] = sorted(nums)
+        logger.info(f"[núcleo] Clasificación LLM → {sorted(nums)}")
+        return nums
+
+    fallback = _heuristico()
+    logger.info(f"[núcleo] LLM sin resultado → heurístico de respaldo {sorted(fallback)}")
+    return fallback
+
+
 # Una sección que es un CUADRO/tabla (operacionalización, matriz de consistencia…) NO es la
 # DEFINICIÓN del subpunto. Para variables, preferimos «Variable independiente/dependiente»
 # (donde se definen tal cual) antes que los cuadros.
@@ -465,14 +640,17 @@ def _secciones_nucleo(toc_nombres: list[str]) -> list[str]:
     return [n for n in toc_nombres if _es_nucleo(n) and not _es_encabezado_capitulo(n)]
 
 
-def _plan_nucleo(nucleo: list[str], diagnosticos: list[dict], escala: int, tope: int = 3) -> dict:
-    """Decide qué subpuntos del núcleo se REESCRIBEN y cuáles solo se OBSERVAN.
+def _plan_nucleo(nucleo: list[str], diagnosticos: list[dict], escala: int, tope: int = 8) -> dict:
+    """Decide qué subpuntos del núcleo se REESCRIBEN y cuáles solo se EXPLICAN.
 
-    Criterio (elección del usuario): "peso + margen". Prioridad = peso × brecha, donde
-    peso = nº de ítems de rúbrica aplicables al subpunto y brecha = escala − nota promedio.
-    Así se reescriben los subpuntos que más pesan en la rúbrica Y tienen margen de mejora
-    (no se gasta el redactor en lo que ya está bien aunque pese). El resto lleva solo la
-    explicación del porqué de su nota (las razones del barrido). Máximo `tope` reescritos.
+    - REESCRIBIR: TODO subpunto cuya nota NO es la máxima (brecha > 0) → el redactor
+      debe MEJORARLO de verdad (aplicar los cambios, incluso menores). `tope` es solo
+      una red de seguridad (el núcleo core son ~5 subpuntos), ordenado por peso×brecha.
+    - OBSERVAR (perfectos): subpuntos que YA tienen la nota máxima → NO se reescriben;
+      el redactor solo justifica (fundamentado en los libros) por qué cumplen.
+
+    Devuelve también `razones_reescribir` (qué falta en cada subpunto a mejorar) para
+    guiar al redactor.
     """
     diag_por_unidad = {d["unidad"]: d for d in diagnosticos}
     filas: list[dict] = []
@@ -501,19 +679,26 @@ def _plan_nucleo(nucleo: list[str], diagnosticos: list[dict], escala: int, tope:
             "peso":      peso,
             "puntaje":   round(score, 1),
             "maximo":    escala,
+            "gap":       gap,
             "prioridad": peso * gap,
             "razones":   razones,
         })
 
     filas.sort(key=lambda x: x["prioridad"], reverse=True)
-    reescribir = [f["seccion"] for f in filas if f["prioridad"] > 0][:tope]
+    # Reescribir TODOS los no-perfectos (brecha > 0), con tope de seguridad.
+    reescribir = [f["seccion"] for f in filas if f["gap"] > 0][:tope]
     rset = set(reescribir)
+    # Observar = SOLO los ya perfectos (brecha 0): se justifican con los libros.
     observar = [
         {"seccion": f["seccion"], "puntaje": f["puntaje"], "maximo": f["maximo"],
          "razones": f["razones"]}
-        for f in filas if f["seccion"] not in rset
+        for f in filas if f["gap"] <= 0 and f["seccion"] not in rset
     ]
-    return {"reescribir": reescribir, "observar": observar}
+    razones_reescribir = {
+        f["seccion"]: f["razones"] for f in filas if f["seccion"] in rset
+    }
+    return {"reescribir": reescribir, "observar": observar,
+            "razones_reescribir": razones_reescribir}
 
 
 def _contexto_nucleo(doc, nucleo: list[str]) -> tuple:
@@ -752,17 +937,21 @@ def ejecutar_revision_completa(
     resumenes: list[dict] = []
     nucleo_reescrito: list[str] = []
     if nucleo and any(_es_core(_seccion_rubrica_para(s) or s) for s in nucleo):
-        plan = _plan_nucleo(nucleo, diagnosticos, ESCALA_MAX, tope=3)
+        plan = _plan_nucleo(nucleo, diagnosticos, ESCALA_MAX, tope=8)
         nucleo_reescrito = list(plan.get("reescribir") or [])
         _desc = {it["numero"]: it.get("descripcion", "") for it in items_all}
         _nums = sorted({num for d in diagnosticos if _es_core(d["unidad"]) for num in (d.get("eval") or {})})
         plan["items"] = [{"numero": n, "descripcion": _desc.get(n, "")} for n in _nums]
         # Notas REALES del barrido para los ítems CORE (tu rúbrica) → núcleo detalle.
+        # La pertenencia al núcleo la decide _items_nucleo (LLM cacheado por rúbrica, con
+        # heurístico de respaldo), por el SIGNIFICADO del ítem: robusto para cualquier
+        # rúbrica y con el mismo conjunto de ítems ante la misma rúbrica.
+        nums_nucleo = _items_nucleo(items_all, rubrica, llm)
         eval_items, npts, nmax = [], 0.0, 0.0
         for it in calificacion["items"]:
             if it["estado"] == "na":
                 continue
-            if any(_es_core(s) for s in (it.get("secciones") or [])):
+            if it["numero"] in nums_nucleo:
                 eval_items.append({"item_numero": it["numero"], "criterio": it["descripcion"],
                                    "puntaje": it["puntaje"], "maximo": it["maximo"],
                                    "observacion": it.get("razon", "")})
@@ -771,53 +960,95 @@ def ejecutar_revision_completa(
         eval_override = ({"items": eval_items, "puntaje": round(npts, 1), "maximo": round(nmax, 1)}
                          if eval_items else None)
         n_re = len(plan["reescribir"])
+        # Iteraciones del NÚCLEO: por defecto 1 (como estaba). Solo itera si el usuario
+        # SUBIÓ el número de iteraciones. Aplica SOLO al núcleo del grafo (el barrido por
+        # ítem y el LLM-as-judge son de 1 pasada y no se tocan). Corte anticipado al ≥90%.
+        max_iter_nucleo = max(1, min(3, max_iteraciones or 1))
+        det_iter = f" — hasta {max_iter_nucleo} iteraciones (corte al 90%)" if max_iter_nucleo > 1 else ""
         yield {"tipo": "fase", "fase": "profundizacion",
                "detalle": f"Fase 3/4 — La red reescribe los {n_re} subpunto(s) core del núcleo "
-                          "(título·problema·objetivos·hipótesis·variables); el resto lo explica…"}
+                          f"(título·problema·objetivos·hipótesis·variables); el resto lo explica{det_iter}…"}
         ctx = _contexto_nucleo(doc, nucleo)
         seccion_nucleo = "Núcleo de coherencia (título · problema · objetivos · hipótesis · variables)"
-        thread_id = str(uuid.uuid4())
-        for evento in ejecutar_seccion(doc, seccion_nucleo, max_iteraciones=1,
-                                       thread_id=thread_id, cancelar=cancelar,
-                                       contexto_override=ctx, modo_nucleo=True,
-                                       nucleo_plan=plan, eval_override=eval_override,
-                                       metricas_juez=metricas):
-            if evento["tipo"] == "seccion_completada":
-                if not evento["resumen"].get("vacia"):
-                    resumenes.append(evento["resumen"])
-            elif evento["tipo"] == "cancelado":
-                yield evento
-                return
-            else:
-                yield evento
+        items_rg = [{"numero": it["item_numero"], "descripcion": _desc.get(it["item_numero"], "")}
+                    for it in eval_items]
 
-        # Re-calificar los subpuntos REESCRITOS contra el texto mejorado, para que la nota
-        # REFLEJE la mejora (alineada a las observaciones) sin bajar la original.
-        # Inicial = notas del barrido (texto original); Final = re-calificación de lo reescrito.
-        if resumenes and nucleo_reescrito and eval_items:
-            r0 = resumenes[0]
-            texto_mej = r0.get("texto_mejorado") or ""
-            reescrito_units = {_seccion_rubrica_para(s) or s for s in nucleo_reescrito}
-            nums_rg = sorted({n for d in diagnosticos if d["unidad"] in reescrito_units
-                              for n in (d.get("eval") or {})})
-            items_rg = [{"numero": n, "descripcion": _desc.get(n, "")} for n in nums_rg]
-            regrade = _recalificar(llm, items_rg, texto_mej, enfoque, ESCALA_MAX, coherencia)
-            if regrade:
-                eval_final, fpts = [], 0.0
-                for it in eval_items:
-                    fila = dict(it)
-                    ng = regrade.get(it["item_numero"])
-                    base = it["puntaje"] or 0
-                    if ng and ng.get("aplica", True) and ng["puntaje"] > base:
-                        fila["puntaje"] = ng["puntaje"]
-                        if ng.get("razon"):
-                            fila["observacion"] = ng["razon"]
-                    fpts += fila["puntaje"] or 0
-                    eval_final.append(fila)
-                det = r0.get("detalle") or {}
-                det["evaluacion_final"] = eval_final
-                det["puntaje"] = round(fpts, 1)
-                r0["puntaje"] = round(fpts, 1)
+        mejor = None            # mejor resultado entre iteraciones: {eval_final, fpts, r0}
+        plan_iter = plan
+        texto_inicial = ""      # iteraciones 2+: parten del texto ya mejorado
+        for it_n in range(max_iter_nucleo):
+            if cancelar.is_set():
+                yield {"tipo": "cancelado"}
+                return
+            if it_n > 0:
+                yield {"tipo": "fase", "fase": "profundizacion",
+                       "detalle": f"Núcleo — iteración {it_n + 1}/{max_iter_nucleo}: cerrando la brecha "
+                                  "de los ítems que aún no llegan al máximo…"}
+
+            r0 = None
+            for evento in ejecutar_seccion(doc, seccion_nucleo, max_iteraciones=1,
+                                           thread_id=str(uuid.uuid4()), cancelar=cancelar,
+                                           contexto_override=ctx, modo_nucleo=True,
+                                           nucleo_plan=plan_iter, eval_override=eval_override,
+                                           metricas_juez=metricas, texto_inicial=texto_inicial):
+                if evento["tipo"] == "seccion_completada":
+                    if not evento["resumen"].get("vacia"):
+                        r0 = evento["resumen"]
+                elif evento["tipo"] == "cancelado":
+                    yield evento
+                    return
+                else:
+                    yield evento
+            if r0 is None:
+                break
+
+            # Re-calificar el texto MEJORADO de esta iteración. Inicial = barrido (texto
+            # original); Final = mejor re-calificación. Con contexto de coherencia (los
+            # ítems relacionales no se castigan por vivir en otro capítulo). Solo SUBE.
+            texto_mej = (r0.get("texto_mejorado") or "").strip()
+            regrade = _recalificar(llm, items_rg, texto_mej, enfoque, ESCALA_MAX, coherencia) if texto_mej else {}
+            eval_final, fpts, n_subieron, faltantes = [], 0.0, 0, []
+            for it in eval_items:
+                fila = dict(it)
+                ng = regrade.get(it["item_numero"])
+                base = it["puntaje"] or 0
+                if ng and ng.get("aplica", True) and ng["puntaje"] > base:
+                    fila["puntaje"] = ng["puntaje"]
+                    if ng.get("razon"):
+                        fila["observacion"] = ng["razon"]
+                    n_subieron += 1
+                fpts += fila["puntaje"] or 0
+                if (fila["puntaje"] or 0) < ESCALA_MAX:
+                    faltantes.append({"numero": it["item_numero"], "criterio": it.get("criterio", ""),
+                                      "razon": (ng or {}).get("razon") or fila.get("observacion", "")})
+                eval_final.append(fila)
+
+            logger.info(
+                f"[núcleo regrade] iter {it_n + 1}/{max_iter_nucleo} | texto={len(texto_mej)} chars | "
+                f"regrade={len(regrade)} | subieron={n_subieron} | "
+                f"{round(npts, 1)} → {round(fpts, 1)}/{round(nmax, 1)}"
+            )
+
+            if mejor is None or fpts > mejor["fpts"]:
+                mejor = {"eval_final": eval_final, "fpts": fpts, "r0": r0}
+
+            # Corte por META (≥90% del máximo) o si ya no quedan iteraciones.
+            if nmax and (fpts / nmax) >= 0.90:
+                break
+            # Siguiente vuelta: parte del texto ya mejorado + el porqué de lo que no llegó.
+            if it_n + 1 < max_iter_nucleo and faltantes:
+                plan_iter = dict(plan)
+                plan_iter["feedback_iteracion"] = faltantes[:12]
+                texto_inicial = texto_mej
+
+        # Aplica el MEJOR resultado al detalle del núcleo.
+        if mejor is not None:
+            r0 = mejor["r0"]
+            det = r0.get("detalle") or {}
+            det["evaluacion_final"] = mejor["eval_final"]
+            det["puntaje"] = round(mejor["fpts"], 1)
+            r0["puntaje"] = round(mejor["fpts"], 1)
+            resumenes = [r0]
 
     # Secciones débiles FUERA del núcleo → sugerir auditarlas aparte.
     sugeridas = [

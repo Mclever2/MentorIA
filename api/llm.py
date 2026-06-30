@@ -23,18 +23,36 @@ def llm_rapido(temperatura: float = 0.0) -> ChatOpenAI:
     )
 
 
+def _sanear_numeros_json(texto: str) -> str:
+    """Quita ceros a la izquierda de enteros en posición de valor JSON.
+
+    Los LLMs suelen devolver `"numero": 01` (porque los ítems se listan como
+    «01.», «02.»), pero JSON NO admite ceros a la izquierda → json.loads revienta.
+    Esto convierte `: 01` → `: 1`, `[01, 02]` → `[1, 2]`, sin tocar `0`, `0.5` ni
+    enteros normales (10, 100). Solo actúa tras `:`, `,` o `[` (posición de valor),
+    para no alterar el contenido de las cadenas de texto.
+    """
+    return re.sub(r"([:\[,]\s*)0+(\d)", r"\1\2", texto)
+
+
 def extraer_json(texto: str) -> dict:
-    """Extrae el primer objeto JSON de una respuesta LLM (tolera ```json fences)."""
+    """Extrae el primer objeto JSON de una respuesta LLM (tolera ```json fences y
+    ceros a la izquierda en los números, p. ej. "numero": 01)."""
     texto = texto.strip()
     texto = re.sub(r"^```(?:json)?\s*|\s*```$", "", texto, flags=re.MULTILINE).strip()
-    try:
-        return json.loads(texto)
-    except json.JSONDecodeError:
-        m = re.search(r"\{.*\}", texto, re.DOTALL)
-        if m:
+
+    candidatos = [texto]
+    m = re.search(r"\{.*\}", texto, re.DOTALL)
+    if m:
+        candidatos.append(m.group(0))
+
+    for cand in candidatos:
+        # 1er intento: tal cual. 2º intento: saneando ceros a la izquierda.
+        for variante in (cand, _sanear_numeros_json(cand)):
             try:
-                return json.loads(m.group(0))
+                return json.loads(variante)
             except json.JSONDecodeError:
-                pass
+                continue
+
     logger.warning(f"[llm] No se pudo parsear JSON de: {texto[:200]}")
     return {}

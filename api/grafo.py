@@ -45,8 +45,14 @@ def construir_estado_inicial(
     meta_aprobacion: float = 0.90,
     modo_nucleo: bool = False,
     nucleo_plan: Optional[dict] = None,
+    texto_inicial: str = "",
 ) -> dict:
-    """Mismo estado inicial que usaba el frontend Streamlit."""
+    """Mismo estado inicial que usaba el frontend Streamlit.
+
+    `texto_inicial`: semilla para `texto_iterado` — en las iteraciones 2+ del núcleo
+    el redactor parte del texto YA mejorado en la vuelta anterior (no del original),
+    para acercarse más al máximo en cada iteración.
+    """
     return {
         "modo_nucleo":                 modo_nucleo,
         "nucleo_plan":                 nucleo_plan,
@@ -73,7 +79,7 @@ def construir_estado_inicial(
         "iter_consenso":               0,
         "iter_disenso":                0,
         "plan_supervisor":             "",
-        "texto_iterado":               "",
+        "texto_iterado":               texto_inicial or "",
         "feedback_auditor":            "",
         "numero_iteracion":            0,
         "errores_rubrica":             [],
@@ -135,6 +141,7 @@ def ejecutar_seccion(
     nucleo_plan: Optional[dict] = None,
     eval_override: Optional[dict] = None,
     metricas_juez: Optional[dict] = None,
+    texto_inicial: str = "",
 ) -> Iterator[dict]:
     """
     Ejecuta el grafo completo sobre UNA sección, emitiendo eventos por nodo.
@@ -183,6 +190,7 @@ def ejecutar_seccion(
         diseno=diseno,
         modo_nucleo=modo_nucleo,
         nucleo_plan=nucleo_plan,
+        texto_inicial=texto_inicial,
     )
 
     graph = get_graph()
@@ -417,15 +425,27 @@ def _bloque_seccion_md(r: dict) -> str:
         partes.extend(f"- {p}" for p in r["puntos_debiles"])
         partes.append("")
 
+    # Núcleo: primero el texto mejorado/justificado por subpunto, luego la lista
+    # NUMERADA de los cambios concretos que se aplicaron.
+    if es_nucleo:
+        if r.get("texto_mejorado"):
+            partes.append("**Texto mejorado y justificación por subpunto**\n")
+            partes.append(r["texto_mejorado"])
+            partes.append("")
+        if r.get("recomendaciones"):
+            partes.append(
+                "**Cambios realizados** (los subpuntos ya en 5/5 no se reescriben: se "
+                "justifica por qué cumplen)\n"
+            )
+            partes.append(r["recomendaciones"])
+        return "\n".join(partes).strip()
+
     if r.get("recomendaciones"):
         partes.append("**Recomendaciones del mentor** (no se califican)\n")
         partes.append(r["recomendaciones"])
         partes.append("")
 
-    if es_nucleo and r.get("texto_mejorado"):
-        partes.append("**Texto mejorado y observaciones por subpunto**\n")
-        partes.append(r["texto_mejorado"])
-    elif r.get("reescrito") and r.get("texto_mejorado"):
+    if r.get("reescrito") and r.get("texto_mejorado"):
         partes.append("**Propuesta de texto mejorado**\n")
         partes.append(r["texto_mejorado"])
     elif r.get("solo_pulido") and r.get("texto_mejorado"):
